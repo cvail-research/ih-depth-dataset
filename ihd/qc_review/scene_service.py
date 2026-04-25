@@ -79,8 +79,14 @@ def resolve_hsi_hdr(scene_dir: Path, collection: str, path_key: str, step_dir: s
 def resolve_shared_qc_images(scene_dir: Path | None) -> tuple[Path | None, Path | None]:
     if scene_dir is None:
         return None, None
-    reference = find_first_existing([scene_dir / name for name in SHARED_REFERENCE_FILENAMES])
-    overlay = find_first_existing([scene_dir / name for name in SHARED_OVERLAY_FILENAMES])
+    dataset_references = sorted(scene_dir.glob("*_PseudoBB*_DistStA.png"))
+    dataset_overlays = sorted(scene_dir.glob("*_DepthOverlay*_DistStA.png"))
+    reference = dataset_references[0] if dataset_references else None
+    overlay = dataset_overlays[0] if dataset_overlays else None
+    if reference is None:
+        reference = find_first_existing([scene_dir / name for name in SHARED_REFERENCE_FILENAMES])
+    if overlay is None:
+        overlay = find_first_existing([scene_dir / name for name in SHARED_OVERLAY_FILENAMES])
     return reference, overlay
 
 
