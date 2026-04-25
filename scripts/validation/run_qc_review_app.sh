@@ -2,10 +2,10 @@
 #SBATCH --job-name=ih_qc_review
 #SBATCH --output=logs/out/%j_ih_qc_review.out
 #SBATCH --error=logs/err/%j_ih_qc_review.err
-#SBATCH --time=00:30:00
+#SBATCH --time=03:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
+#SBATCH --mem=1G
 #SBATCH --partition=prod
 
 set -euo pipefail
