@@ -1,5 +1,6 @@
 import argparse
 import csv
+import re
 import shutil
 from pathlib import Path
 
@@ -50,8 +51,9 @@ def derive_output_names(hdr_path: Path) -> tuple[str, str]:
         ref_name = f"{prefix}_PseudoBB_{collect_suffix}.png"
         overlay_name = f"{prefix}_DepthOverlay_{collect_suffix}.png"
         return ref_name, overlay_name
-    if stem.endswith("_LWHSI1_DistStA"):
-        prefix = stem[: -len("_LWHSI1_DistStA")]
+    match = re.fullmatch(r"(?P<prefix>.+)_LWHSI1_+DistStA", stem)
+    if match:
+        prefix = match.group("prefix")
         return (
             f"{prefix}_PseudoBB_DistStA.png",
             f"{prefix}_DepthOverlay_DistStA.png",
@@ -61,8 +63,9 @@ def derive_output_names(hdr_path: Path) -> tuple[str, str]:
         ref_name = f"{prefix}_PseudoBB_{collect_suffix}.png"
         overlay_name = f"{prefix}_DepthOverlay_{collect_suffix}.png"
         return ref_name, overlay_name
-    if stem.endswith("_LWHSI2_DistStA"):
-        prefix = stem[: -len("_LWHSI2_DistStA")]
+    match = re.fullmatch(r"(?P<prefix>.+)_LWHSI2_+DistStA", stem)
+    if match:
+        prefix = match.group("prefix")
         return (
             f"{prefix}_PseudoBB_DistStA.png",
             f"{prefix}_DepthOverlay_DistStA.png",
