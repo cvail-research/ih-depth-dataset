@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ih-depth-dataset"
+version = "0.1.0"
+description = "IH-Depth dataset curation tools for the DARPA Invisible Headlights LWIR-LiDAR expansion"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3",
+    "fastapi",
+    "laspy",
+    "matplotlib",
+    "numpy",
+    "opencv-python",
+    "pandas",
+    "scipy",
+    "spectral",
+    "uvicorn",
+]
+
+[tool.setuptools.packages.find]
+include = ["ihd*"]
