@@ -19,11 +19,15 @@ export PYTHONUNBUFFERED=1
 OUT_DIR="${1:-analysis/qc_review/correspondence_distance_errors}"
 SAMPLE_RADIUS_PX="${2:-5}"
 BINS="${3:-auto-tertiles}"
+DEPTH_LABEL_ROOT="${4:-analysis/depth_labels/platform_sphere_r2p5}"
 
 rm -rf "${OUT_DIR}"
+mkdir -p "${DEPTH_LABEL_ROOT}"
 
 srun uv run python -m ihd.datasets.summarize_correspondence_distance_errors \
   --out-dir "${OUT_DIR}" \
   --sample-radius-px "${SAMPLE_RADIUS_PX}" \
   --bins "${BINS}" \
-  --preprocess-suffix platform_sphere_r2p5
+  --preprocess-suffix platform_sphere_r2p5 \
+  --save-depth-labels \
+  --depth-label-root "${DEPTH_LABEL_ROOT}"

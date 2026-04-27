@@ -63,6 +63,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Optional debug limit for the number of workspace scenes to process.",
     )
+    ap.add_argument(
+        "--save-depth-labels",
+        action="store_true",
+        help="Persist one numeric projected-depth label NPZ per processed scene.",
+    )
+    ap.add_argument(
+        "--depth-label-root",
+        default="analysis/depth_labels/platform_sphere_r2p5",
+        help="Root directory for saved depth-label NPZ files when --save-depth-labels is set.",
+    )
     return ap.parse_args()
 
 
@@ -124,6 +134,68 @@ def preferred_las_path(collection: str, path_key: str, step_dir: str, suffix: st
 def picked_distance_m(xyz: np.ndarray, cam) -> float:
     xyz_cam = cam.Rot @ xyz + cam.t
     return float(np.linalg.norm(xyz_cam))
+
+
+def save_depth_label_npz(
+    out_root: Path,
+    collection: str,
+    path_key: str,
+    step_dir: str,
+    depth_img: np.ndarray,
+    i_vals: np.ndarray,
+    j_vals: np.ndarray,
+    depth_vals: np.ndarray,
+    workspace_dir: Path,
+    fit_path: Path,
+    las_path: Path,
+    cyl_path: Path,
+    preprocess_suffix: str,
+) -> Path:
+    out_dir = out_root / collection / path_key / step_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "projected_lidar_depth_label.npz"
+    np.savez_compressed(
+        out_path,
+        depth_m=depth_img.astype(np.float32),
+        valid_mask=np.isfinite(depth_img).astype(np.uint8),
+        projected_u=i_vals.astype(np.float32),
+        projected_v=j_vals.astype(np.float32),
+        projected_depth_m=depth_vals.astype(np.float32),
+        collection=np.asarray(collection),
+        path_key=np.asarray(path_key),
+        step_dir=np.asarray(step_dir),
+        workspace_dir=np.asarray(str(workspace_dir)),
+        fit_path=np.asarray(str(fit_path)),
+        las_path=np.asarray(str(las_path)),
+        cyl_path=np.asarray(str(cyl_path)),
+        preprocess_suffix=np.asarray(preprocess_suffix),
+    )
+    manifest_path = out_dir / "projected_lidar_depth_label.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "collection": collection,
+                "path_key": path_key,
+                "step_dir": step_dir,
+                "depth_npz": str(out_path),
+                "depth_key": "depth_m",
+                "mask_key": "valid_mask",
+                "units": "meters",
+                "invalid_value": "NaN",
+                "workspace_dir": str(workspace_dir),
+                "fit_path": str(fit_path),
+                "las_path": str(las_path),
+                "cyl_path": str(cyl_path),
+                "preprocess_suffix": preprocess_suffix,
+                "valid_pixels": int(np.isfinite(depth_img).sum()),
+                "image_height": int(depth_img.shape[0]),
+                "image_width": int(depth_img.shape[1]),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return out_path
 
 
 def nearest_depth(depth_img: np.ndarray, uv: np.ndarray, radius_px: int) -> tuple[float, float, float, float]:
@@ -193,6 +265,25 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
             height, width = gray.shape
             i_vals, j_vals, depth_vals = project_las(las_path, cam, fit, str(fit.get("mode")))
             depth_img = rasterize(width, height, i_vals, j_vals, depth_vals)
+            depth_label_path = ""
+            if args.save_depth_labels:
+                depth_label_path = str(
+                    save_depth_label_npz(
+                        Path(args.depth_label_root),
+                        collection,
+                        path_key,
+                        step_dir,
+                        depth_img,
+                        i_vals,
+                        j_vals,
+                        depth_vals,
+                        workspace_dir,
+                        fit_path,
+                        las_path,
+                        cyl_path,
+                        args.preprocess_suffix,
+                    )
+                )
         except Exception as exc:
             rows.append(
                 {
@@ -222,6 +313,7 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
                     "workspace_root": str(workspace_root),
                     "fit_path": str(fit_path),
                     "las_path": str(las_path),
+                    "depth_label_path": depth_label_path,
                     "point_index": idx,
                     "status": "sampled" if has_sample else "missing_depth_near_pick",
                     "picked_u": float(uv[0]),
