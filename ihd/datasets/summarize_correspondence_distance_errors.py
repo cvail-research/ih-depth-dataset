@@ -116,12 +116,20 @@ def collect_rows(workspace_roots: list[Path], bins: list[float]) -> list[dict[st
                     xyz_cam = cam.Rot @ xyz + cam.t
                     distance_m = float(np.linalg.norm(xyz_cam))
                     distance_frame = "camera"
+                    du_angle_rad = float((proj[0] - ref[0]) * cam.y)
+                    ref_v_angle = math.atan2(float(ref[1] - cam.j0), cam.f)
+                    proj_v_angle = math.atan2(float(proj[1] - cam.j0), cam.f)
+                    dv_angle_rad = float(proj_v_angle - ref_v_angle)
                 else:
                     distance_m = float(np.linalg.norm(xyz))
                     distance_frame = "point_frame"
+                    du_angle_rad = math.nan
+                    dv_angle_rad = math.nan
                 du = float(proj[0] - ref[0])
                 dv = float(proj[1] - ref[1])
                 residual_px = float(np.hypot(du, dv))
+                angular_residual_rad = float(np.hypot(du_angle_rad, dv_angle_rad))
+                metric_residual_m = float(distance_m * angular_residual_rad)
                 rows.append(
                     {
                         "collection": collection,
@@ -136,6 +144,13 @@ def collect_rows(workspace_roots: list[Path], bins: list[float]) -> list[dict[st
                         "du_px": du,
                         "dv_px": dv,
                         "residual_px": residual_px,
+                        "du_angle_rad": du_angle_rad,
+                        "dv_angle_rad": dv_angle_rad,
+                        "angular_residual_rad": angular_residual_rad,
+                        "metric_residual_m": metric_residual_m,
+                        "metric_residual_percent_of_range": (
+                            100.0 * metric_residual_m / distance_m if distance_m > 0 else math.nan
+                        ),
                     }
                 )
     return rows
@@ -145,11 +160,19 @@ def summarize(rows: list[dict[str, str | float]], bins: list[float]) -> list[dic
     summary = []
     labels = [f"{lo:g}-{hi:g}m" if math.isfinite(hi) else f"{lo:g}+m" for lo, hi in zip(bins[:-1], bins[1:])]
     for label in labels:
-        values = np.asarray([float(row["residual_px"]) for row in rows if row["distance_bin"] == label], dtype=np.float64)
-        distances = np.asarray([float(row["distance_m"]) for row in rows if row["distance_bin"] == label], dtype=np.float64)
-        if len(values) == 0:
+        bin_rows = [row for row in rows if row["distance_bin"] == label]
+        values = np.asarray([float(row["residual_px"]) for row in bin_rows], dtype=np.float64)
+        metric_values = np.asarray([float(row["metric_residual_m"]) for row in bin_rows], dtype=np.float64)
+        percent_values = np.asarray(
+            [float(row["metric_residual_percent_of_range"]) for row in bin_rows],
+            dtype=np.float64,
+        )
+        distances = np.asarray([float(row["distance_m"]) for row in bin_rows], dtype=np.float64)
+        if len(bin_rows) == 0:
             summary.append({"distance_bin": label, "n": 0})
             continue
+        metric_values = metric_values[np.isfinite(metric_values)]
+        percent_values = percent_values[np.isfinite(percent_values)]
         summary.append(
             {
                 "distance_bin": label,
@@ -162,6 +185,13 @@ def summarize(rows: list[dict[str, str | float]], bins: list[float]) -> list[dic
                 "residual_rmse_px": float(np.sqrt(np.mean(values**2))),
                 "residual_p90_px": float(np.percentile(values, 90)),
                 "residual_max_px": float(np.max(values)),
+                "metric_mean_m": float(np.mean(metric_values)),
+                "metric_median_m": float(np.median(metric_values)),
+                "metric_rmse_m": float(np.sqrt(np.mean(metric_values**2))),
+                "metric_p90_m": float(np.percentile(metric_values, 90)),
+                "metric_max_m": float(np.max(metric_values)),
+                "metric_median_percent_of_range": float(np.median(percent_values)),
+                "metric_p90_percent_of_range": float(np.percentile(percent_values, 90)),
             }
         )
     return summary
@@ -198,6 +228,29 @@ def save_histogram(path: Path, rows: list[dict[str, str | float]], bins: list[fl
     plt.close(fig)
 
 
+def save_metric_histogram(path: Path, rows: list[dict[str, str | float]], bins: list[float]) -> None:
+    labels = [f"{lo:g}-{hi:g}m" if math.isfinite(hi) else f"{lo:g}+m" for lo, hi in zip(bins[:-1], bins[1:])]
+    fig, axes = plt.subplots(len(labels), 1, figsize=(8, max(2.4, 2.2 * len(labels))), sharex=True)
+    if len(labels) == 1:
+        axes = [axes]
+    for ax, label in zip(axes, labels):
+        values = [
+            float(row["metric_residual_m"])
+            for row in rows
+            if row["distance_bin"] == label and math.isfinite(float(row["metric_residual_m"]))
+        ]
+        ax.hist(values, bins=24, color="#8a5a22", edgecolor="white")
+        ax.set_ylabel(label)
+        ax.grid(axis="y", alpha=0.25)
+        ax.text(0.98, 0.82, f"n={len(values)}", transform=ax.transAxes, ha="right")
+    axes[-1].set_xlabel("Approx. metric reprojection residual at point range (meters)")
+    fig.suptitle("Sparse correspondence metric residuals by 3D distance bin")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
 def main() -> None:
     args = parse_args()
     bins = parse_bins(args.bins)
@@ -207,10 +260,12 @@ def main() -> None:
     write_csv(out_dir / "per_correspondence_errors.csv", rows)
     write_csv(out_dir / "distance_bin_summary.csv", summary)
     save_histogram(out_dir / "distance_bin_histograms.png", rows, bins)
+    save_metric_histogram(out_dir / "distance_bin_metric_histograms.png", rows, bins)
     print(f"Correspondences: {len(rows)}")
     print(f"Per-point CSV: {out_dir / 'per_correspondence_errors.csv'}")
     print(f"Summary CSV: {out_dir / 'distance_bin_summary.csv'}")
     print(f"Histogram: {out_dir / 'distance_bin_histograms.png'}")
+    print(f"Metric histogram: {out_dir / 'distance_bin_metric_histograms.png'}")
 
 
 if __name__ == "__main__":
