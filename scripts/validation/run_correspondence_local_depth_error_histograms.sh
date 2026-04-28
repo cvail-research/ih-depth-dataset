@@ -18,7 +18,7 @@ export PYTHONUNBUFFERED=1
 
 OUT_DIR="${1:-analysis/qc_review/correspondence_distance_errors}"
 SAMPLE_RADIUS_PX="${2:-5}"
-BINS="${3:-auto-tertiles}"
+BINS="${3:-0,10,100,inf}"
 DEPTH_LABEL_ROOT="${4:-analysis/depth_labels/platform_sphere_r2p5}"
 
 rm -rf "${OUT_DIR}"
