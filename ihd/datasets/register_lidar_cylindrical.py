@@ -1,9 +1,9 @@
 import argparse, sys, math
 from pathlib import Path
-from typing import Literal
 import numpy as np, laspy, spectral as spy
 from cylindrical_camera import read_cam, project_vect_safe
 import shutil
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 
 def parse_args():
@@ -31,45 +31,6 @@ def parse_args():
                     help="Optional max depth (meters) for depth_map color scaling (default = data max)")
     return ap.parse_args()
 
-
-def depth_range(Pc: np.ndarray) -> np.ndarray:
-    return np.linalg.norm(Pc, axis=1)  # Euclidean range
-
-def rasterize(width:int, height:int,
-              i:np.ndarray, j:np.ndarray, d:np.ndarray,
-              reduce:Literal["min","median","mean"]="min"):
-    img = np.full((height,width), np.nan, dtype=np.float32)
-    if len(d)==0: return img
-    ui = np.floor(i).astype(np.int32)
-    vj = np.floor(j).astype(np.int32)
-    valid = (ui>=0)&(ui<width)&(vj>=0)&(vj<height)&np.isfinite(d)
-    if not np.any(valid): return img
-    ui=ui[valid]; vj=vj[valid]; d=d[valid]
-    pix = vj*width + ui
-    order = np.argsort(pix)
-    pix = pix[order]; d = d[order]
-    unique, idx_start = np.unique(pix, return_index=True)
-    if reduce=="min":
-        # first after sorting by pix then by depth -> sort by depth inside each pix:
-        # Easier: second sort with (d,pix)
-        o2 = np.lexsort((d, pix))
-        pix2 = pix[o2]; d2 = d[o2]
-        keep = np.ones_like(pix2, bool)
-        keep[1:] = pix2[1:] != pix2[:-1]
-        y = (pix2[keep]//width).astype(int); x=(pix2[keep]%width).astype(int)
-        img[y,x] = d2[keep]
-    else:
-        vals = np.empty(len(unique), dtype=np.float32)
-        for k,u in enumerate(unique):
-            s = idx_start[k]; e = idx_start[k+1] if k+1<len(unique) else len(pix)
-            seg = d[s:e]
-            if reduce=="median":
-                vals[k] = np.median(seg)
-            else:
-                vals[k] = float(np.mean(seg))
-        y = (unique//width).astype(int); x=(unique%width).astype(int)
-        img[y,x] = vals
-    return img
 
 def main():
     args = parse_args()
@@ -455,4 +416,3 @@ __all__ = [
 
 if __name__ == "__main__":
     sys.exit(main())
-

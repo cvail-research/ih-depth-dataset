@@ -10,11 +10,9 @@ import numpy as np
 from ihd.annotation_workspace.scene_service import (
     PREPROCESS_ROOT,
     _now,
-    depth_range,
     load_gray_preview,
     metrics_from_residual,
     path_key,
-    rasterize,
     resolve_lwhsi_file,
     resolve_scene_dir,
     save_manual_projection_plot,
@@ -24,6 +22,7 @@ from ihd.annotation_workspace.scene_service import (
 from ihd.annotation_workspace_nocyl.scene_service import WORKSPACE_ROOT_NO_CYL, build_default_cyl_camera
 from ihd.datasets.calibration_lidar_cylindrical import calibrate_single, write_cyl
 from ihd.datasets.cylindrical_camera import project_vect_safe
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 
 def parse_args() -> argparse.Namespace:

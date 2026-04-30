@@ -14,11 +14,10 @@ import numpy as np
 from ihd.datasets.render_overlay_from_workspace import (
     load_gray,
     project_las,
-    rasterize,
     read_json,
     resolve_local_artifact,
-    suppress_far_occlusion_bleed,
 )
+from ihd.datasets.depth_rasterization import rasterize, suppress_far_occlusion_bleed
 from ihd.datasets.cylindrical_camera import read_cam
 
 

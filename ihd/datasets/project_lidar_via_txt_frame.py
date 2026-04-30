@@ -10,7 +10,7 @@ import numpy as np
 import spectral as spy
 
 from cylindrical_camera import project_vect_safe, read_cam
-from register_lidar_cylindrical import depth_range, rasterize
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 
 TXT_TO_LAS_R = np.array([

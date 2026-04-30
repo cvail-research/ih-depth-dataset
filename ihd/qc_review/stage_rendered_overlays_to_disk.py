@@ -9,13 +9,12 @@ from ihd.datasets.render_overlay_from_workspace import (
     auto_title,
     load_gray,
     project_las,
-    rasterize,
     read_json,
     resolve_local_artifact,
     save_overlay,
-    suppress_far_occlusion_bleed,
 )
 from ihd.datasets.cylindrical_camera import project_vect_safe, read_cam
+from ihd.datasets.depth_rasterization import depth_range, rasterize, suppress_far_occlusion_bleed
 from ihd.qc_review.scene_service import (
     ANALYSIS_ROOT,
     QC_ROOT,
@@ -25,10 +24,6 @@ from ihd.qc_review.scene_service import (
     resolve_scene_dir,
 )
 from ihd.qc_review.stage_to_disk import derive_output_names
-
-
-def depth_range(points_cam: np.ndarray) -> np.ndarray:
-    return np.linalg.norm(points_cam, axis=1)
 
 
 def parse_args() -> argparse.Namespace:

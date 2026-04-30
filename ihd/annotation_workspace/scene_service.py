@@ -16,6 +16,7 @@ import spectral as spy
 
 from ihd.datasets.calibration_lidar_cylindrical import calibrate_single, read_corresp, write_cyl
 from ihd.datasets.cylindrical_camera import project_vect_safe, read_cam
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANALYSIS_ROOT = REPO_ROOT / "analysis"
@@ -229,34 +230,6 @@ def save_cyl_verification_plot(
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
-
-
-def depth_range(Pc: np.ndarray) -> np.ndarray:
-    return np.linalg.norm(Pc, axis=1)
-
-
-def rasterize(width: int, height: int, i: np.ndarray, j: np.ndarray, d: np.ndarray) -> np.ndarray:
-    img = np.full((height, width), np.nan, dtype=np.float32)
-    if len(d) == 0:
-        return img
-    ui = np.floor(i).astype(np.int32)
-    vj = np.floor(j).astype(np.int32)
-    valid = (ui >= 0) & (ui < width) & (vj >= 0) & (vj < height) & np.isfinite(d)
-    if not np.any(valid):
-        return img
-    ui = ui[valid]
-    vj = vj[valid]
-    d = d[valid]
-    pix = vj * width + ui
-    o2 = np.lexsort((d, pix))
-    pix2 = pix[o2]
-    d2 = d[o2]
-    keep = np.ones_like(pix2, dtype=bool)
-    keep[1:] = pix2[1:] != pix2[:-1]
-    y = (pix2[keep] // width).astype(int)
-    x = (pix2[keep] % width).astype(int)
-    img[y, x] = d2[keep]
-    return img
 
 
 def save_overlay(gray: np.ndarray, depth_img: np.ndarray, out_path: Path, scene_label: str) -> None:

@@ -11,6 +11,7 @@ import numpy as np
 import spectral as spy
 
 from ihd.datasets.cylindrical_camera import project_vect_safe, read_cam
+from ihd.datasets.depth_rasterization import depth_range, rasterize, suppress_far_occlusion_bleed
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,77 +84,6 @@ def load_gray(workspace_dir: Path, scene_data: dict) -> np.ndarray:
     if gray.max() > 0:
         gray /= gray.max()
     return gray
-
-
-def depth_range(points_cam: np.ndarray) -> np.ndarray:
-    return np.linalg.norm(points_cam, axis=1)
-
-
-def rasterize(width: int, height: int, i: np.ndarray, j: np.ndarray, d: np.ndarray) -> np.ndarray:
-    img = np.full((height, width), np.nan, dtype=np.float32)
-    if len(d) == 0:
-        return img
-    ui = np.floor(i).astype(np.int32)
-    vj = np.floor(j).astype(np.int32)
-    valid = (ui >= 0) & (ui < width) & (vj >= 0) & (vj < height) & np.isfinite(d)
-    if not np.any(valid):
-        return img
-    ui = ui[valid]
-    vj = vj[valid]
-    d = d[valid]
-    pix = vj * width + ui
-    order = np.lexsort((d, pix))
-    pix = pix[order]
-    d = d[order]
-    keep = np.ones_like(pix, dtype=bool)
-    keep[1:] = pix[1:] != pix[:-1]
-    y = (pix[keep] // width).astype(int)
-    x = (pix[keep] % width).astype(int)
-    img[y, x] = d[keep]
-    return img
-
-
-def suppress_far_occlusion_bleed(
-    depth_img: np.ndarray,
-    radius_px: int,
-    min_depth_gap_m: float,
-    min_depth_gap_ratio: float,
-) -> np.ndarray:
-    """Remove far returns that sit next to a much closer projected return.
-
-    Exact-pixel z-buffering keeps the closest return only when points land in
-    the same pixel. Sparse LiDAR projections can still leave far background
-    returns immediately adjacent to foreground returns, which looks like depth
-    bleeding at object boundaries. This filter suppresses only those far
-    pixels; it does not densify the label map.
-    """
-    if radius_px <= 0:
-        return depth_img
-    if depth_img.size == 0:
-        return depth_img
-
-    finite = np.isfinite(depth_img)
-    if not np.any(finite):
-        return depth_img
-
-    work = np.where(finite, depth_img, np.inf).astype(np.float32, copy=False)
-    kernel_size = 2 * radius_px + 1
-    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
-    local_min = cv2.erode(work, kernel)
-    has_neighbor = np.isfinite(local_min)
-    absolute_gap = depth_img - local_min
-    relative_gap = absolute_gap / np.maximum(local_min, 1e-6)
-    suppress = (
-        finite
-        & has_neighbor
-        & (absolute_gap > float(min_depth_gap_m))
-        & (relative_gap > float(min_depth_gap_ratio))
-    )
-    if not np.any(suppress):
-        return depth_img
-    filtered = depth_img.copy()
-    filtered[suppress] = np.nan
-    return filtered
 
 
 def save_overlay(gray: np.ndarray, depth_img: np.ndarray, out_path: Path, title: str | None) -> None:

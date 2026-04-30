@@ -12,7 +12,7 @@ from scipy.spatial import cKDTree
 
 from calibration_lidar_cylindrical import read_corresp
 from cylindrical_camera import project_vect_safe, read_cam
-from register_lidar_cylindrical import depth_range, rasterize
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 
 def parse_vec(text: str, n: int) -> np.ndarray:

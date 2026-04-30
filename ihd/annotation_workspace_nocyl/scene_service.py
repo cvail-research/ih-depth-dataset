@@ -14,12 +14,10 @@ from ihd.annotation_workspace.scene_service import (
     REPO_ROOT,
     _now,
     collection_tag,
-    depth_range,
     load_gray_preview,
     metrics_from_residual,
     parse_utc_timestamp,
     path_key,
-    rasterize,
     resolve_lwhsi_file,
     resolve_raw_las,
     resolve_scene_dir,
@@ -30,6 +28,7 @@ from ihd.annotation_workspace.scene_service import (
 )
 from ihd.datasets.calibration_lidar_cylindrical import calibrate_single, read_corresp, write_cyl
 from ihd.datasets.cylindrical_camera import camera, project_vect_safe
+from ihd.datasets.depth_rasterization import depth_range, rasterize
 
 WORKSPACE_ROOT_NO_CYL = REPO_ROOT / "analysis" / "annotation_workspace_nocyl"
 MIN_NO_CYL_FIT_POINTS = 8
