@@ -281,7 +281,7 @@ def plot_distance_percent_histograms(depth_rows: list[dict[str, str]], out_path:
         ax.axvline(1, color="#2f8f46", linewidth=2.0, label="1% target")
         ax.axvline(5, color="#b7372f", linewidth=2.0, label="5% reject")
         ax.set_title(f"{RANGE_LABELS[range_key]}\nn={len(values)}")
-        ax.set_xlabel("Local depth error (% of picked range)")
+        ax.set_xlabel("Relative range error (%)")
         ax.grid(axis="y", alpha=0.25)
         ax.set_xlim(0, 25)
     axes[0].set_ylabel("Picked correspondences")
@@ -304,7 +304,7 @@ def plot_single_range_distance_histograms(depth_rows: list[dict[str, str]], out_
         ax.axvline(1, color="#2f8f46", linewidth=2.2)
         ax.axvline(5, color="#b7372f", linewidth=2.2, label="5% reject")
         ax.set_xlim(0, 25)
-        ax.set_xlabel("Local depth error (% of picked 3D range)")
+        ax.set_xlabel("Relative range error (%)")
         ax.set_ylabel("Picked correspondences")
         ax.set_title(f"{RANGE_LABELS[range_key]} distance agreement (n={len(values)})")
         ax.text(
