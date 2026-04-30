@@ -20,6 +20,7 @@ OUT_DIR="${1:-analysis/qc_review/correspondence_distance_errors}"
 SAMPLE_RADIUS_PX="${2:-5}"
 BINS="${3:-0,10,100,inf}"
 DEPTH_LABEL_ROOT="${4:-analysis/depth_labels/platform_sphere_r2p5}"
+SAMPLE_MODE="${5:-closest-range}"
 
 rm -rf "${OUT_DIR}"
 mkdir -p "${DEPTH_LABEL_ROOT}"
@@ -27,6 +28,7 @@ mkdir -p "${DEPTH_LABEL_ROOT}"
 srun uv run python -m ihd.datasets.summarize_correspondence_distance_errors \
   --out-dir "${OUT_DIR}" \
   --sample-radius-px "${SAMPLE_RADIUS_PX}" \
+  --sample-mode "${SAMPLE_MODE}" \
   --bins "${BINS}" \
   --preprocess-suffix platform_sphere_r2p5 \
   --save-depth-labels \

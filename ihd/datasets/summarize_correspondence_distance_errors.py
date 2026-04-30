@@ -56,7 +56,16 @@ def parse_args() -> argparse.Namespace:
         "--sample-radius-px",
         type=int,
         default=5,
-        help="Nearest valid projected-depth search radius around each picked 2D point.",
+        help="Projected-depth search radius around each picked 2D point.",
+    )
+    ap.add_argument(
+        "--sample-mode",
+        choices=["nearest-pixel", "closest-range"],
+        default="closest-range",
+        help=(
+            "How to choose one depth value inside the search patch. "
+            "closest-range selects the front-most projected return in the patch."
+        ),
     )
     ap.add_argument(
         "--max-scenes",
@@ -198,7 +207,7 @@ def save_depth_label_npz(
     return out_path
 
 
-def nearest_depth(depth_img: np.ndarray, uv: np.ndarray, radius_px: int) -> tuple[float, float, float, float]:
+def sample_depth(depth_img: np.ndarray, uv: np.ndarray, radius_px: int, mode: str) -> tuple[float, float, float, float]:
     x0 = int(round(float(uv[0])))
     y0 = int(round(float(uv[1])))
     height, width = depth_img.shape
@@ -216,7 +225,13 @@ def nearest_depth(depth_img: np.ndarray, uv: np.ndarray, radius_px: int) -> tupl
     xs = xx + x_min
     ys = yy + y_min
     distances_px = np.hypot(xs - float(uv[0]), ys - float(uv[1]))
-    best = int(np.argmin(distances_px))
+    if mode == "nearest-pixel":
+        best = int(np.argmin(distances_px))
+    elif mode == "closest-range":
+        depths = patch[yy, xx]
+        best = int(np.argmin(depths))
+    else:
+        raise ValueError(f"Unsupported sample mode: {mode}")
     return float(patch[yy[best], xx[best]]), float(xs[best]), float(ys[best]), float(distances_px[best])
 
 
@@ -302,7 +317,12 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
             uv = reference_uv[idx]
             xyz = np.asarray(valid_picks[idx]["las_xyz"], dtype=np.float64)
             picked_range = picked_distance_m(xyz, cam)
-            sampled_depth, sampled_x, sampled_y, nearest_px = nearest_depth(depth_img, uv, args.sample_radius_px)
+            sampled_depth, sampled_x, sampled_y, nearest_px = sample_depth(
+                depth_img,
+                uv,
+                args.sample_radius_px,
+                args.sample_mode,
+            )
             has_sample = math.isfinite(sampled_depth)
             depth_error = abs(sampled_depth - picked_range) if has_sample else math.nan
             rows.append(
@@ -319,6 +339,7 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
                     "picked_u": float(uv[0]),
                     "picked_v": float(uv[1]),
                     "sample_radius_px": args.sample_radius_px,
+                    "sample_mode": args.sample_mode,
                     "sampled_u": sampled_x,
                     "sampled_v": sampled_y,
                     "nearest_depth_pixel_distance_px": nearest_px,
