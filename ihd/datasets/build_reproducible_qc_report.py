@@ -351,9 +351,10 @@ def plot_rmse_distribution(scene_rows: list[dict[str, Any]], out_path: Path) -> 
     values = np.asarray([float(row["fit_rmse_total_px"]) for row in scene_rows], dtype=np.float64)
     values = values[np.isfinite(values)]
     fig, ax = plt.subplots(figsize=(7.2, 4.2))
-    ax.hist(values, bins=36, color="#324f7c", edgecolor="white", linewidth=0.45)
+    ax.hist(values, bins=np.linspace(0, 50, 51), color="#324f7c", edgecolor="white", linewidth=0.45)
     for threshold, color in [(3, "#2f8f46"), (5, "#d08c28"), (10, "#b7372f")]:
         ax.axvline(threshold, color=color, linewidth=2.0, label=f"{threshold}px")
+    ax.set_xlim(0, 50)
     ax.set_xlabel("Image-space fit RMSE (pixels)")
     ax.set_ylabel("Scenes")
     ax.set_title("Image-Space Registration Error Distribution")
