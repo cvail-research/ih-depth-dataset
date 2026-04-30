@@ -41,8 +41,11 @@ for MODEL in "${MODELS[@]}"; do
       fi
       ;;
     unidepthv2)
-      PYTHON_BIN="${UNIDEPTHV2_PYTHON:-python}" \
+      if [[ -n "${UNIDEPTHV2_PYTHON:-}" ]]; then
+        PYTHON_BIN="${UNIDEPTHV2_PYTHON}" scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      else
         scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      fi
       ;;
     depthanythingv2)
       PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON:-python}" \

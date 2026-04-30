@@ -26,16 +26,19 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="lpiccinelli/unidepth-v2-vitl14")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--resolution-level", type=int, default=9)
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
 
-def load_model(model_name: str, device: str):
+def load_model(model_name: str, device: str, resolution_level: int):
     import torch
     from unidepth.models import UniDepthV2
 
     actual_device = torch.device(device if device == "cpu" or torch.cuda.is_available() else "cpu")
     model = UniDepthV2.from_pretrained(model_name).to(actual_device).eval()
+    model.resolution_level = resolution_level
+    model.interpolation_mode = "bilinear"
     return model, actual_device
 
 
@@ -46,7 +49,7 @@ def predict_one(model, device, hdr_path: str, out_dir: Path, model_name: str, sa
     rgb_torch = torch.from_numpy(rgb).permute(2, 0, 1).to(device)
     t0 = time.time()
     with torch.no_grad():
-        outputs = model.infer(rgb_torch)
+        outputs = model.infer(rgb_torch, None)
     depth = outputs["depth"].detach().cpu().numpy().squeeze().astype(np.float32)
     meta.update({"inference_seconds": time.time() - t0, "model_slug": MODEL_SLUG})
     return save_depth_prediction(depth, out_dir, model_name, hdr_path, meta, save_visualization=save_vis)
@@ -54,7 +57,7 @@ def predict_one(model, device, hdr_path: str, out_dir: Path, model_name: str, sa
 
 def main() -> None:
     args = parse_args()
-    model, device = load_model(args.model_name, args.device)
+    model, device = load_model(args.model_name, args.device, args.resolution_level)
     rows_out = []
     if args.hdr:
         pred = predict_one(model, device, args.hdr, Path(args.out_dir), args.model_name, not args.no_vis)
@@ -70,4 +73,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

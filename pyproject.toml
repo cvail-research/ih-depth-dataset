@@ -28,6 +28,12 @@ unik3d = [
     "torchvision",
     "unik3d @ git+https://github.com/lpiccinelli-eth/UniK3D.git",
 ]
+unidepthv2 = [
+    "setuptools<81",
+    "torch",
+    "torchvision",
+    "unidepth @ git+https://github.com/lpiccinelli-eth/UniDepth.git",
+]
 
 [tool.setuptools.packages.find]
 include = ["ihd*"]

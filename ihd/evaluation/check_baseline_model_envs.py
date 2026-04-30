@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Check Python environments for IH baseline model runners.")
     ap.add_argument("--out-csv", default="analysis/evaluation/baseline_model_env_check.csv")
     ap.add_argument("--unik3d-python", default="uv run --extra unik3d python")
-    ap.add_argument("--unidepthv2-python", default="python")
+    ap.add_argument("--unidepthv2-python", default="uv run --extra unidepthv2 python")
     ap.add_argument("--depthanythingv2-python", default="python")
     ap.add_argument("--depthpro-python", default="python")
     return ap.parse_args()
