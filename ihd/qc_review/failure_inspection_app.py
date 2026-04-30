@@ -3,9 +3,14 @@ import csv
 from pathlib import Path
 from typing import Any
 
+import cv2
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FAILURE_CACHE_ROOT = REPO_ROOT / "analysis" / "qc_review" / "cache" / "failure_inspection"
 
 
 INDEX_HTML = """<!doctype html>
@@ -85,15 +90,10 @@ INDEX_HTML = """<!doctype html>
     .badge.gold { background: rgba(228, 172, 69, 0.18); color: #f4d38e; }
     .content {
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
       gap: 10px;
       min-height: 0;
-    }
-    .images {
-      display: grid;
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-      gap: 10px;
-      min-height: 0;
+      overflow: hidden;
     }
     .panel {
       min-height: 0;
@@ -126,16 +126,17 @@ INDEX_HTML = """<!doctype html>
       object-fit: contain;
       display: block;
     }
-    .side {
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 10px;
-      min-height: 0;
-    }
     .explain {
       font-size: 13px;
       line-height: 1.45;
       color: var(--muted);
+    }
+    .inspection-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(520px, 1.2fr);
+      gap: 10px;
+      min-height: 132px;
+      max-height: 170px;
     }
     .table-wrap {
       overflow: auto;
@@ -202,22 +203,15 @@ INDEX_HTML = """<!doctype html>
     </div>
 
     <div class="content">
-      <div class="images">
-        <div class="panel">
-          <h2>Depth Overlay</h2>
-          <div class="image-wrap"><img id="overlayImg"></div>
-        </div>
-        <div class="panel">
-          <h2>Correspondence Reprojection Preview</h2>
-          <div class="image-wrap"><img id="reprojectionImg"></div>
-        </div>
-        <div class="panel">
-          <h2>Reference Pseudobroadband HSI</h2>
-          <div class="image-wrap"><img id="referenceImg"></div>
-        </div>
+      <div class="panel">
+        <h2>Depth Overlay</h2>
+        <div class="image-wrap"><img id="overlayImg"></div>
       </div>
-
-      <div class="side">
+      <div class="panel">
+        <h2>Reference / Correspondence Points</h2>
+        <div class="image-wrap"><img id="annotatedReferenceImg"></div>
+      </div>
+      <div class="inspection-strip">
         <div class="panel">
           <h2>How To Read This</h2>
           <div class="explain">
@@ -225,6 +219,7 @@ INDEX_HTML = """<!doctype html>
             A scene fails the 5% rule if any sampled correspondence has local depth disagreement
             greater than 5% of that picked point's 3D range. For 0-10 m points, 1% means up to
             0.01-0.10 m depending on the point distance; 5% means up to 0.05-0.50 m.
+            Numbered markers match the table rows.
           </div>
         </div>
         <div class="panel">
@@ -289,8 +284,7 @@ INDEX_HTML = """<!doctype html>
         badge(`${scene.distance_points_gt_1pct} pts >1%`, scene.distance_points_gt_1pct > 0 ? 'gold' : 'green')
       ].join('');
       document.getElementById('overlayImg').src = scene.overlay_url;
-      document.getElementById('referenceImg').src = scene.reference_url;
-      document.getElementById('reprojectionImg').src = scene.reprojection_url;
+      document.getElementById('annotatedReferenceImg').src = scene.annotated_reference_url;
       document.getElementById('statusText').textContent =
         `Failure table: ${state.failure_csv} | Showing scenes failing ${state.threshold_percent}% rule`;
 
@@ -381,10 +375,89 @@ class FailureInspectionService:
             return Path(scene["disk_overlay"])
         if kind == "reference":
             return Path(scene["disk_reference"])
+        if kind == "annotated-reference":
+            return self._annotated_reference_path(self.current_index)
         if kind == "reprojection":
             fit_path = Path(scene["fit_path"])
             return fit_path.parent / "reprojection_preview.png"
         raise ValueError(f"Unsupported image kind: {kind}")
+
+    def _reference_base_path(self, scene: dict[str, str]) -> Path:
+        fit_path = Path(scene["fit_path"])
+        preview = fit_path.parent / "image_preview.png"
+        if preview.exists():
+            return preview
+        return Path(scene["disk_reference"])
+
+    def _points_for_scene(self, scene: dict[str, str]) -> list[dict[str, Any]]:
+        key = (scene["collection"], scene["path"], scene["step"])
+        points = []
+        for row in self.points_by_scene.get(key, []):
+            if row.get("status") != "sampled":
+                continue
+            points.append(
+                {
+                    "point_index": to_int(row.get("point_index", "")),
+                    "picked_u": to_float(row.get("picked_u", "")),
+                    "picked_v": to_float(row.get("picked_v", "")),
+                    "picked_range_m": to_float(row.get("picked_range_m", "")),
+                    "sampled_overlay_depth_m": to_float(row.get("sampled_overlay_depth_m", "")),
+                    "absolute_depth_error_m": to_float(row.get("absolute_depth_error_m", "")),
+                    "error_percent": to_float(row.get("absolute_depth_error_percent_of_range", "")),
+                    "distance_bin": row.get("distance_bin", ""),
+                    "nearest_depth_pixel_distance_px": to_float(row.get("nearest_depth_pixel_distance_px", "")),
+                }
+            )
+        points.sort(key=lambda row: (-(row["error_percent"] or -1), row["point_index"]))
+        return points
+
+    def _annotated_reference_path(self, index: int) -> Path:
+        scene = self.scenes[index]
+        out_path = FAILURE_CACHE_ROOT / scene["collection"] / scene["path"] / scene["step"] / "annotated_reference.png"
+        source = self._reference_base_path(scene)
+        if out_path.exists() and out_path.stat().st_mtime >= source.stat().st_mtime:
+            return out_path
+
+        img = cv2.imread(str(source), cv2.IMREAD_COLOR)
+        if img is None:
+            raise FileNotFoundError(source)
+
+        height, width = img.shape[:2]
+        points = self._points_for_scene(scene)
+        for point in points:
+            u = point.get("picked_u")
+            v = point.get("picked_v")
+            if u is None or v is None:
+                continue
+            x = int(round(float(u)))
+            y = int(round(float(v)))
+            if not (0 <= x < width and 0 <= y < height):
+                continue
+            error = point.get("error_percent") or 0.0
+            if error > 5:
+                color = (80, 80, 255)
+            elif error > 1:
+                color = (45, 190, 245)
+            else:
+                color = (130, 220, 120)
+            label = str(point["point_index"])
+            cv2.circle(img, (x, y), 8, color, thickness=-1, lineType=cv2.LINE_AA)
+            cv2.circle(img, (x, y), 9, (10, 10, 10), thickness=2, lineType=cv2.LINE_AA)
+            cv2.putText(
+                img,
+                label,
+                (x + 11, y + 4),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                color,
+                thickness=2,
+                lineType=cv2.LINE_AA,
+            )
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cv2.imwrite(str(out_path), img):
+            raise RuntimeError(f"Failed to write annotated reference: {out_path}")
+        return out_path
 
     def image_path(self, index: int, kind: str) -> Path:
         if not (0 <= index < len(self.scenes)):
@@ -401,23 +474,7 @@ class FailureInspectionService:
 
     def state(self) -> dict[str, Any]:
         scene = self._current_scene()
-        key = (scene["collection"], scene["path"], scene["step"])
-        points = []
-        for row in self.points_by_scene.get(key, []):
-            if row.get("status") != "sampled":
-                continue
-            points.append(
-                {
-                    "point_index": to_int(row.get("point_index", "")),
-                    "picked_range_m": to_float(row.get("picked_range_m", "")),
-                    "sampled_overlay_depth_m": to_float(row.get("sampled_overlay_depth_m", "")),
-                    "absolute_depth_error_m": to_float(row.get("absolute_depth_error_m", "")),
-                    "error_percent": to_float(row.get("absolute_depth_error_percent_of_range", "")),
-                    "distance_bin": row.get("distance_bin", ""),
-                    "nearest_depth_pixel_distance_px": to_float(row.get("nearest_depth_pixel_distance_px", "")),
-                }
-            )
-        points.sort(key=lambda row: (-(row["error_percent"] or -1), row["point_index"]))
+        points = self._points_for_scene(scene)
         return {
             "scene_count": len(self.scenes),
             "failure_csv": str(self.failure_csv),
@@ -437,6 +494,7 @@ class FailureInspectionService:
                 "overlay_url": f"/api/scene/{self.current_index}/overlay",
                 "reference_url": f"/api/scene/{self.current_index}/reference",
                 "reprojection_url": f"/api/scene/{self.current_index}/reprojection",
+                "annotated_reference_url": f"/api/scene/{self.current_index}/annotated-reference",
                 "points": points,
             },
         }
