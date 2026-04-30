@@ -21,6 +21,9 @@ SAMPLE_RADIUS_PX="${2:-5}"
 BINS="${3:-0,10,100,inf}"
 DEPTH_LABEL_ROOT="${4:-analysis/depth_labels/platform_sphere_r2p5}"
 SAMPLE_MODE="${5:-closest-range}"
+OCCLUSION_FILTER_RADIUS_PX="${6:-0}"
+OCCLUSION_MIN_DEPTH_GAP_M="${7:-1.0}"
+OCCLUSION_MIN_DEPTH_GAP_RATIO="${8:-0.05}"
 
 rm -rf "${OUT_DIR}"
 mkdir -p "${DEPTH_LABEL_ROOT}"
@@ -32,4 +35,7 @@ srun uv run python -m ihd.datasets.summarize_correspondence_distance_errors \
   --bins "${BINS}" \
   --preprocess-suffix platform_sphere_r2p5 \
   --save-depth-labels \
-  --depth-label-root "${DEPTH_LABEL_ROOT}"
+  --depth-label-root "${DEPTH_LABEL_ROOT}" \
+  --occlusion-filter-radius-px "${OCCLUSION_FILTER_RADIUS_PX}" \
+  --occlusion-min-depth-gap-m "${OCCLUSION_MIN_DEPTH_GAP_M}" \
+  --occlusion-min-depth-gap-ratio "${OCCLUSION_MIN_DEPTH_GAP_RATIO}"

@@ -13,6 +13,7 @@ from ihd.datasets.render_overlay_from_workspace import (
     read_json,
     resolve_local_artifact,
     save_overlay,
+    suppress_far_occlusion_bleed,
 )
 from ihd.datasets.cylindrical_camera import project_vect_safe, read_cam
 from ihd.qc_review.scene_service import (
@@ -60,6 +61,24 @@ def parse_args() -> argparse.Namespace:
         help="Whether local rendered copies include a path/step title.",
     )
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing disk overlay PNGs.")
+    ap.add_argument(
+        "--occlusion-filter-radius-px",
+        type=int,
+        default=0,
+        help="Suppress far depth pixels if a much closer pixel exists within this radius. Disabled at 0.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-m",
+        type=float,
+        default=1.0,
+        help="Minimum absolute range gap required for occlusion suppression.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-ratio",
+        type=float,
+        default=0.05,
+        help="Minimum relative range gap required for occlusion suppression, e.g. 0.05 = 5%%.",
+    )
     ap.add_argument(
         "--manifest-out",
         default=str(QC_ROOT / "staged_rendered_overlays_manifest.csv"),
@@ -112,7 +131,16 @@ def ensure_reference_png(scene, scene_dir: Path, ref_target: Path) -> str:
     return str(hdr_path)
 
 
-def render_overlay(workspace_dir: Path, las_path: Path, out_path: Path, title_mode: str) -> dict[str, int | str]:
+def apply_occlusion_filter(depth_img: np.ndarray, args: argparse.Namespace) -> np.ndarray:
+    return suppress_far_occlusion_bleed(
+        depth_img,
+        args.occlusion_filter_radius_px,
+        args.occlusion_min_depth_gap_m,
+        args.occlusion_min_depth_gap_ratio,
+    )
+
+
+def render_overlay(workspace_dir: Path, las_path: Path, out_path: Path, title_mode: str, args: argparse.Namespace) -> dict[str, int | str]:
     fit_data = read_json(workspace_dir / "fit.json")
     scene_data = read_json(workspace_dir / "scene.json")
     if not bool(fit_data.get("ready")):
@@ -128,6 +156,7 @@ def render_overlay(workspace_dir: Path, las_path: Path, out_path: Path, title_mo
     j_vals = j_vals[inside]
     d = d[inside]
     depth_img = rasterize(width, height, i_vals, j_vals, d)
+    depth_img = apply_occlusion_filter(depth_img, args)
     title = auto_title(scene_data, workspace_dir) if title_mode == "auto" else None
     save_overlay(gray, depth_img, out_path, title)
     return {
@@ -136,7 +165,15 @@ def render_overlay(workspace_dir: Path, las_path: Path, out_path: Path, title_mo
     }
 
 
-def render_lidar_labeling_overlay(scene, scene_dir: Path, hdr_path: Path, las_path: Path, out_path: Path, title_mode: str) -> dict[str, int | str]:
+def render_lidar_labeling_overlay(
+    scene,
+    scene_dir: Path,
+    hdr_path: Path,
+    las_path: Path,
+    out_path: Path,
+    title_mode: str,
+    args: argparse.Namespace,
+) -> dict[str, int | str]:
     cyl_path = resolve_cyl(scene_dir, hdr_path)
     if cyl_path is None:
         raise FileNotFoundError(f"Could not resolve .cyl in {scene_dir}")
@@ -182,6 +219,7 @@ def render_lidar_labeling_overlay(scene, scene_dir: Path, hdr_path: Path, las_pa
     j_vals = j_vals[inside]
     d = d[inside]
     depth_img = rasterize(width, height, i_vals, j_vals, d)
+    depth_img = apply_occlusion_filter(depth_img, args)
     title = f"{scene.path_key} {scene.step_dir.split('_')[-1].title()}" if title_mode == "auto" else None
     save_overlay(gray, depth_img, out_path, title)
     return {
@@ -245,9 +283,9 @@ def main() -> None:
         local_overlay = out_root / scene.collection / scene.path_key / scene.step_dir / overlay_name
         try:
             if workspace_dir is not None:
-                stats = render_overlay(workspace_dir, las_path, local_overlay, args.title_mode)
+                stats = render_overlay(workspace_dir, las_path, local_overlay, args.title_mode, args)
             else:
-                stats = render_lidar_labeling_overlay(scene, scene_dir, hdr_path, las_path, local_overlay, args.title_mode)
+                stats = render_lidar_labeling_overlay(scene, scene_dir, hdr_path, las_path, local_overlay, args.title_mode, args)
             ensure_reference_png(scene, scene_dir, disk_ref)
             shutil.copy2(local_overlay, disk_overlay)
         except Exception as exc:

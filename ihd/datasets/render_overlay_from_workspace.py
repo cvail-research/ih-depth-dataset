@@ -22,6 +22,24 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--out", required=True, help="Output overlay PNG")
     ap.add_argument("--npz-out", help="Optional projected point/depth NPZ")
     ap.add_argument(
+        "--occlusion-filter-radius-px",
+        type=int,
+        default=0,
+        help="Suppress far depth pixels if a much closer pixel exists within this radius. Disabled at 0.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-m",
+        type=float,
+        default=1.0,
+        help="Minimum absolute range gap required for occlusion suppression.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-ratio",
+        type=float,
+        default=0.05,
+        help="Minimum relative range gap required for occlusion suppression, e.g. 0.05 = 5%%.",
+    )
+    ap.add_argument(
         "--title-mode",
         choices=["none", "auto", "custom"],
         default="none",
@@ -93,6 +111,49 @@ def rasterize(width: int, height: int, i: np.ndarray, j: np.ndarray, d: np.ndarr
     x = (pix[keep] % width).astype(int)
     img[y, x] = d[keep]
     return img
+
+
+def suppress_far_occlusion_bleed(
+    depth_img: np.ndarray,
+    radius_px: int,
+    min_depth_gap_m: float,
+    min_depth_gap_ratio: float,
+) -> np.ndarray:
+    """Remove far returns that sit next to a much closer projected return.
+
+    Exact-pixel z-buffering keeps the closest return only when points land in
+    the same pixel. Sparse LiDAR projections can still leave far background
+    returns immediately adjacent to foreground returns, which looks like depth
+    bleeding at object boundaries. This filter suppresses only those far
+    pixels; it does not densify the label map.
+    """
+    if radius_px <= 0:
+        return depth_img
+    if depth_img.size == 0:
+        return depth_img
+
+    finite = np.isfinite(depth_img)
+    if not np.any(finite):
+        return depth_img
+
+    work = np.where(finite, depth_img, np.inf).astype(np.float32, copy=False)
+    kernel_size = 2 * radius_px + 1
+    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+    local_min = cv2.erode(work, kernel)
+    has_neighbor = np.isfinite(local_min)
+    absolute_gap = depth_img - local_min
+    relative_gap = absolute_gap / np.maximum(local_min, 1e-6)
+    suppress = (
+        finite
+        & has_neighbor
+        & (absolute_gap > float(min_depth_gap_m))
+        & (relative_gap > float(min_depth_gap_ratio))
+    )
+    if not np.any(suppress):
+        return depth_img
+    filtered = depth_img.copy()
+    filtered[suppress] = np.nan
+    return filtered
 
 
 def save_overlay(gray: np.ndarray, depth_img: np.ndarray, out_path: Path, title: str | None) -> None:
@@ -229,6 +290,12 @@ def main() -> None:
     j_vals = j_vals[inside]
     d = d[inside]
     depth_img = rasterize(width, height, i_vals, j_vals, d)
+    depth_img = suppress_far_occlusion_bleed(
+        depth_img,
+        args.occlusion_filter_radius_px,
+        args.occlusion_min_depth_gap_m,
+        args.occlusion_min_depth_gap_ratio,
+    )
 
     title = None
     if args.title_mode == "auto":
@@ -248,6 +315,9 @@ def main() -> None:
             j=j_vals,
             depth=d,
             depth_img=depth_img.astype(np.float32),
+            occlusion_filter_radius_px=args.occlusion_filter_radius_px,
+            occlusion_min_depth_gap_m=args.occlusion_min_depth_gap_m,
+            occlusion_min_depth_gap_ratio=args.occlusion_min_depth_gap_ratio,
             width=width,
             height=height,
             workspace_dir=str(workspace_dir),

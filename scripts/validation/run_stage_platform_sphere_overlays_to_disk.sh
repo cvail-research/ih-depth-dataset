@@ -14,6 +14,9 @@ mkdir -p logs/out logs/err
 
 OVERWRITE="${1:---overwrite}"
 TITLE_MODE="${2:-none}"
+OCCLUSION_FILTER_RADIUS_PX="${3:-0}"
+OCCLUSION_MIN_DEPTH_GAP_M="${4:-1.0}"
+OCCLUSION_MIN_DEPTH_GAP_RATIO="${5:-0.05}"
 
 REPO_ROOT="${SLURM_SUBMIT_DIR}"
 cd "${REPO_ROOT}"
@@ -27,6 +30,9 @@ CMD=(
   --out-root analysis/overlay_checks/platform_sphere_r2p5
   --title-mode "${TITLE_MODE}"
   --manifest-out analysis/qc_review/staged_platform_sphere_overlays_manifest.csv
+  --occlusion-filter-radius-px "${OCCLUSION_FILTER_RADIUS_PX}"
+  --occlusion-min-depth-gap-m "${OCCLUSION_MIN_DEPTH_GAP_M}"
+  --occlusion-min-depth-gap-ratio "${OCCLUSION_MIN_DEPTH_GAP_RATIO}"
 )
 
 if [ "${OVERWRITE}" = "--overwrite" ]; then

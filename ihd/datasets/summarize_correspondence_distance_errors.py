@@ -17,6 +17,7 @@ from ihd.datasets.render_overlay_from_workspace import (
     rasterize,
     read_json,
     resolve_local_artifact,
+    suppress_far_occlusion_bleed,
 )
 from ihd.datasets.cylindrical_camera import read_cam
 
@@ -81,6 +82,24 @@ def parse_args() -> argparse.Namespace:
         "--depth-label-root",
         default="analysis/depth_labels/platform_sphere_r2p5",
         help="Root directory for saved depth-label NPZ files when --save-depth-labels is set.",
+    )
+    ap.add_argument(
+        "--occlusion-filter-radius-px",
+        type=int,
+        default=0,
+        help="Suppress far depth pixels if a much closer pixel exists within this radius. Disabled at 0.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-m",
+        type=float,
+        default=1.0,
+        help="Minimum absolute range gap required for occlusion suppression.",
+    )
+    ap.add_argument(
+        "--occlusion-min-depth-gap-ratio",
+        type=float,
+        default=0.05,
+        help="Minimum relative range gap required for occlusion suppression, e.g. 0.05 = 5%%.",
     )
     return ap.parse_args()
 
@@ -159,6 +178,9 @@ def save_depth_label_npz(
     las_path: Path,
     cyl_path: Path,
     preprocess_suffix: str,
+    occlusion_filter_radius_px: int,
+    occlusion_min_depth_gap_m: float,
+    occlusion_min_depth_gap_ratio: float,
 ) -> Path:
     out_dir = out_root / collection / path_key / step_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -178,6 +200,9 @@ def save_depth_label_npz(
         las_path=np.asarray(str(las_path)),
         cyl_path=np.asarray(str(cyl_path)),
         preprocess_suffix=np.asarray(preprocess_suffix),
+        occlusion_filter_radius_px=np.asarray(occlusion_filter_radius_px),
+        occlusion_min_depth_gap_m=np.asarray(occlusion_min_depth_gap_m),
+        occlusion_min_depth_gap_ratio=np.asarray(occlusion_min_depth_gap_ratio),
     )
     manifest_path = out_dir / "projected_lidar_depth_label.json"
     manifest_path.write_text(
@@ -196,6 +221,9 @@ def save_depth_label_npz(
                 "las_path": str(las_path),
                 "cyl_path": str(cyl_path),
                 "preprocess_suffix": preprocess_suffix,
+                "occlusion_filter_radius_px": int(occlusion_filter_radius_px),
+                "occlusion_min_depth_gap_m": float(occlusion_min_depth_gap_m),
+                "occlusion_min_depth_gap_ratio": float(occlusion_min_depth_gap_ratio),
                 "valid_pixels": int(np.isfinite(depth_img).sum()),
                 "image_height": int(depth_img.shape[0]),
                 "image_width": int(depth_img.shape[1]),
@@ -280,6 +308,12 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
             height, width = gray.shape
             i_vals, j_vals, depth_vals = project_las(las_path, cam, fit, str(fit.get("mode")))
             depth_img = rasterize(width, height, i_vals, j_vals, depth_vals)
+            depth_img = suppress_far_occlusion_bleed(
+                depth_img,
+                args.occlusion_filter_radius_px,
+                args.occlusion_min_depth_gap_m,
+                args.occlusion_min_depth_gap_ratio,
+            )
             depth_label_path = ""
             if args.save_depth_labels:
                 depth_label_path = str(
@@ -297,6 +331,9 @@ def collect_unbinned_rows(args: argparse.Namespace) -> list[dict[str, str | floa
                         las_path,
                         cyl_path,
                         args.preprocess_suffix,
+                        args.occlusion_filter_radius_px,
+                        args.occlusion_min_depth_gap_m,
+                        args.occlusion_min_depth_gap_ratio,
                     )
                 )
         except Exception as exc:
