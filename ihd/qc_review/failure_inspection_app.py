@@ -213,8 +213,8 @@ INDEX_HTML = """<!doctype html>
               <thead>
                 <tr>
                   <th>Point</th>
-                  <th>Range m</th>
-                  <th>Depth m</th>
+                  <th>Picked 3D range m</th>
+                  <th>Sampled label range m</th>
                   <th>Abs err m</th>
                   <th>Err %</th>
                   <th>Bin</th>

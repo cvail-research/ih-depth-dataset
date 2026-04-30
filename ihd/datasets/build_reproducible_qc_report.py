@@ -138,12 +138,18 @@ def build_scene_table(
     for row in rmse_rows:
         key = scene_key(row)
         fit_rmse = as_float(row.get("fit_rmse_total_px", ""))
+        calibration_source = (
+            "own_fitted_cyl_from_picked_correspondences"
+            if row.get("source") == "annotation_workspace_nocyl"
+            else "inherited_scene_cyl_plus_own_rigid_lidar_fit"
+        )
         out: dict[str, Any] = {
             "collection": row["collection"],
             "path": row["path"],
             "step": row["step"],
             "scene": row.get("title") or f"{row['collection']} / {row['path']} / {row['step']}",
             "source": row.get("source", ""),
+            "calibration_source": calibration_source,
             "fit_rmse_total_px": fit_rmse,
             "num_picked_pairs": row.get("num_picked_pairs", ""),
             "disk_overlay": row.get("disk_overlay", ""),
