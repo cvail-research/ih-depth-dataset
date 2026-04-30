@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -17,7 +18,7 @@ MODELS = {
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Check Python environments for IH baseline model runners.")
     ap.add_argument("--out-csv", default="analysis/evaluation/baseline_model_env_check.csv")
-    ap.add_argument("--unik3d-python", default="/home/guille/.conda/envs/deeptr/bin/python")
+    ap.add_argument("--unik3d-python", default="uv run --extra unik3d python")
     ap.add_argument("--unidepthv2-python", default="python")
     ap.add_argument("--depthanythingv2-python", default="python")
     ap.add_argument("--depthpro-python", default="python")
@@ -27,7 +28,7 @@ def parse_args() -> argparse.Namespace:
 def check_module(python_bin: str, module: str) -> tuple[bool, str]:
     code = f"import {module}; print('ok')"
     proc = subprocess.run(
-        [python_bin, "-c", code],
+        [*shlex.split(python_bin), "-c", code],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

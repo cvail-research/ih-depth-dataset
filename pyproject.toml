@@ -21,5 +21,13 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.optional-dependencies]
+unik3d = [
+    "setuptools<81",
+    "torch",
+    "torchvision",
+    "unik3d @ git+https://github.com/lpiccinelli-eth/UniK3D.git",
+]
+
 [tool.setuptools.packages.find]
 include = ["ihd*"]

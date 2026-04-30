@@ -30,8 +30,11 @@ uv run python -m ihd.evaluation.build_prediction_input_manifest \
 
 case "${MODEL}" in
   unik3d)
-    PYTHON_BIN="${UNIK3D_PYTHON:-/home/guille/.conda/envs/deeptr/bin/python}" \
+    if [[ -n "${UNIK3D_PYTHON:-}" ]]; then
+      PYTHON_BIN="${UNIK3D_PYTHON}" scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+    else
       scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+    fi
     ;;
   unidepthv2)
     PYTHON_BIN="${UNIDEPTHV2_PYTHON:-python}" \
