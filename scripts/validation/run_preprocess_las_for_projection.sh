@@ -15,7 +15,7 @@ mkdir -p logs/out logs/err
 if { [ "$#" -ne 1 ] || [ ! -f "$1" ]; } && { [ "$#" -lt 5 ] || [ "$#" -gt 21 ]; }; then
   echo "Usage: sbatch $0 <config.env>" >&2
   echo "   config.env requires COLLECTION and PATH_NAME, plus either STEP or STEP_LIST" >&2
-  echo "   or: sbatch $0 <scene_label> <collection> <path_name> <step> <out_subdir> [<projection_voxel>] [<sor_k>] [<sor_std_ratio>] [<range_max>] [<z_min>] [<projection_use_sor:0|1>] [<projection_sor_k>] [<projection_sor_std_ratio>] [<profile_name>] [<platform_radius>] [<platform_z_min>] [<platform_z_max>] [<platform_center_x>] [<platform_center_y>] [<exclude_spheres>] [<exclude_boxes>]" >&2
+  echo "   or: sbatch $0 <scene_label> <collection> <path_name> <step> <out_subdir> [<projection_voxel>] [<sor_k>] [<sor_std_ratio>] [<range_max>] [<z_min>] [<use_sor:0|1>] [<legacy_projection_sor_k>] [<legacy_projection_sor_std_ratio>] [<profile_name>] [<platform_radius>] [<platform_z_min>] [<platform_z_max>] [<platform_center_x>] [<platform_center_y>] [<exclude_spheres>] [<exclude_boxes>]" >&2
   echo "      exclude_spheres format: x,y,z,radius;x,y,z,radius;..." >&2
   echo "      exclude_boxes format: x_min,x_max,y_min,y_max,z_min,z_max;x_min,x_max,y_min,y_max,z_min,z_max;..." >&2
   exit 1
@@ -169,7 +169,7 @@ run_one_step() {
   las_path="$(resolve_las_path "${scene_dir}" "${PATH_PREFIX}" "${step}")"
 
   CMD=(
-    uv run python ihd/datasets/preprocess_las_for_annotation.py
+    uv run python ihd/datasets/preprocess_las_for_projection.py
     --las "${las_path}"
     --out-dir "${out_dir}"
     --scene-label "${scene_label}"

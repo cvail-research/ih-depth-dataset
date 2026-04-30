@@ -81,7 +81,7 @@ INDEX=0
 while IFS=$'\t' read -r scene_label collection path_name step out_subdir; do
   INDEX=$((INDEX + 1))
   echo "[$(date -Iseconds)] (${INDEX}/${TOTAL_SCENES}) ${collection} ${path_name} Step${step}"
-  bash scripts/validation/run_preprocess_las_for_annotation.sh \
+  bash scripts/validation/run_preprocess_las_for_projection.sh \
     "${scene_label}" \
     "${collection}" \
     "${path_name}" \
@@ -93,8 +93,8 @@ while IFS=$'\t' read -r scene_label collection path_name step out_subdir; do
     "" \
     "" \
     1 \
-    50 \
-    2.0 \
+    "" \
+    "" \
     "${PROFILE}" \
     "" \
     "" \

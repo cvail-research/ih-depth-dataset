@@ -9,10 +9,10 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 DEFAULT_PROFILE_NAME = "projection_sor50_2p0_voxel0p03"
-DEFAULT_PROJECTION_USE_SOR = True
-DEFAULT_PROJECTION_SOR_K = 50
-DEFAULT_PROJECTION_SOR_STD_RATIO = 2.0
-DEFAULT_PROJECTION_VOXEL = 0.03
+DEFAULT_CLEANED_USE_SOR = True
+DEFAULT_CLEANED_SOR_K = 50
+DEFAULT_CLEANED_SOR_STD_RATIO = 2.0
+DEFAULT_CLEANED_VOXEL = 0.03
 DEFAULT_SOR_QUERY_BATCH_SIZE = 200_000
 DEFAULT_PLATFORM_CENTER_X = 0.0
 DEFAULT_PLATFORM_CENTER_Y = 0.0
@@ -58,7 +58,7 @@ def parse_exclusion_box(raw: str) -> tuple[float, float, float, float, float, fl
 def parse_args():
     ap = argparse.ArgumentParser(
         description=(
-            "Create one cleaned display/projection LAS cloud from a raw scene LAS using optional "
+            "Create one cleaned LAS cloud from a raw scene LAS using optional "
             "range/z cropping, statistical outlier removal, and voxel representative-point downsampling."
         )
     )
@@ -73,40 +73,40 @@ def parse_args():
     ap.add_argument(
         "--sor-k",
         type=int,
-        default=DEFAULT_PROJECTION_SOR_K,
-        help="Default SOR neighbor count",
+        default=DEFAULT_CLEANED_SOR_K,
+        help="SOR neighbor count for the cleaned LiDAR cloud",
     )
     ap.add_argument(
         "--sor-std-ratio",
         type=float,
-        default=DEFAULT_PROJECTION_SOR_STD_RATIO,
-        help="Default SOR standard deviation ratio",
+        default=DEFAULT_CLEANED_SOR_STD_RATIO,
+        help="SOR standard deviation ratio for the cleaned LiDAR cloud",
     )
     ap.add_argument(
         "--projection-sor-k",
         type=int,
-        help="Optional separate SOR neighbor count for the projection cloud",
+        help="Deprecated alias for --sor-k; kept for existing Slurm scripts.",
     )
     ap.add_argument(
         "--projection-sor-std-ratio",
         type=float,
-        help="Optional separate SOR std ratio for the projection cloud",
+        help="Deprecated alias for --sor-std-ratio; kept for existing Slurm scripts.",
     )
     ap.add_argument(
         "--projection-use-sor",
         action="store_true",
-        help="Apply SOR to the projection cloud too.",
+        help="Apply SOR to the cleaned LiDAR cloud.",
     )
     ap.add_argument(
         "--no-projection-use-sor",
         action="store_true",
-        help="Disable projection-cloud SOR even if the default profile enables it.",
+        help="Disable SOR for the cleaned LiDAR cloud.",
     )
     ap.add_argument(
         "--projection-voxel",
         type=float,
-        default=DEFAULT_PROJECTION_VOXEL,
-        help="Voxel size in meters for the cleaned display/projection cloud",
+        default=DEFAULT_CLEANED_VOXEL,
+        help="Voxel size in meters for the cleaned LiDAR cloud",
     )
     ap.add_argument("--range-min", type=float, help="Optional minimum Euclidean range in meters")
     ap.add_argument("--range-max", type=float, help="Optional maximum Euclidean range in meters")
@@ -317,18 +317,18 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     las_path = Path(args.las)
     scene_label = args.scene_label or las_path.stem
-    projection_use_sor = DEFAULT_PROJECTION_USE_SOR
+    projection_use_sor = DEFAULT_CLEANED_USE_SOR
     if args.projection_use_sor:
         projection_use_sor = True
     if args.no_projection_use_sor:
         projection_use_sor = False
     projection_sor_k = (
-        args.projection_sor_k if args.projection_sor_k is not None else DEFAULT_PROJECTION_SOR_K
+        args.projection_sor_k if args.projection_sor_k is not None else args.sor_k
     )
     projection_sor_std_ratio = (
         args.projection_sor_std_ratio
         if args.projection_sor_std_ratio is not None
-        else DEFAULT_PROJECTION_SOR_STD_RATIO
+        else args.sor_std_ratio
     )
 
     las = laspy.read(las_path)

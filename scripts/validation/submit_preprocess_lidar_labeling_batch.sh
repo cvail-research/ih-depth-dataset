@@ -41,7 +41,7 @@ PY
 
   out_subdir="${step_dir}"
   echo "Submitting preprocessing for ${COLLECTION} ${path_capitalized} step ${step_num}"
-  sbatch scripts/validation/run_preprocess_las_for_annotation.sh \
+  sbatch scripts/validation/run_preprocess_las_for_projection.sh \
     "${scene_label}" \
     "${COLLECTION}" \
     "${path_capitalized}" \
@@ -53,7 +53,7 @@ PY
     "" \
     "" \
     1 \
-    50 \
-    2.0 \
+    "" \
+    "" \
     projection_sor50_2p0_voxel0p03
 done
