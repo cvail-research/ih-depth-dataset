@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         default="1,5",
         help="Comma-separated local depth agreement thresholds to report in percent of range.",
     )
+    ap.add_argument(
+        "--manual-exclusions",
+        default="configs/release/manual_scene_exclusions.csv",
+        help="Optional CSV of scenes to remove from the QC pool. Columns: collection,path,step,exclusion_reason.",
+    )
     return ap.parse_args()
 
 
@@ -85,6 +90,17 @@ def as_float(value: str) -> float:
 
 def scene_key(row: dict[str, str]) -> tuple[str, str, str]:
     return row["collection"], row["path"], row["step"]
+
+
+def read_manual_exclusions(path: Path) -> dict[tuple[str, str, str], str]:
+    if not path.exists():
+        return {}
+    rows = read_csv(path)
+    exclusions: dict[tuple[str, str, str], str] = {}
+    for row in rows:
+        key = scene_key(row)
+        exclusions[key] = row.get("exclusion_reason", "").strip()
+    return exclusions
 
 
 def summarize_scene_depth(rows: list[dict[str, str]], thresholds: list[float]) -> dict[tuple[str, str, str], dict[str, Any]]:
@@ -142,11 +158,14 @@ def build_scene_table(
     depth_rows: list[dict[str, str]],
     rmse_thresholds: list[float],
     distance_thresholds: list[float],
+    manual_exclusions: dict[tuple[str, str, str], str],
 ) -> list[dict[str, Any]]:
     depth_summary = summarize_scene_depth(depth_rows, distance_thresholds)
     rows: list[dict[str, Any]] = []
     for row in rmse_rows:
         key = scene_key(row)
+        if key in manual_exclusions:
+            continue
         fit_rmse = as_float(row.get("fit_rmse_total_px", ""))
         calibration_source = (
             "own_fitted_cyl_from_picked_correspondences"
@@ -373,12 +392,26 @@ def main() -> None:
     distance_thresholds = [float(v) for v in args.distance_thresholds.split(",")]
     rmse_rows = read_csv(Path(args.rmse_candidates))
     depth_rows = read_csv(Path(args.local_depth_errors))
+    manual_exclusions = read_manual_exclusions(Path(args.manual_exclusions))
 
-    scene_rows = build_scene_table(rmse_rows, depth_rows, rmse_thresholds, distance_thresholds)
+    scene_rows = build_scene_table(rmse_rows, depth_rows, rmse_thresholds, distance_thresholds, manual_exclusions)
     distance_counts = make_threshold_counts(scene_rows, distance_thresholds)
     rmse_counts = make_rmse_counts(scene_rows, rmse_thresholds)
 
     write_csv(out_dir / "scene_reproducible_qc_summary.csv", scene_rows)
+    write_csv(
+        out_dir / "manual_scene_exclusions_applied.csv",
+        [
+            {
+                "collection": collection,
+                "path": path,
+                "step": step,
+                "scene": f"{collection} / {path} / {step}",
+                "exclusion_reason": reason,
+            }
+            for (collection, path, step), reason in sorted(manual_exclusions.items())
+        ],
+    )
     write_csv(out_dir / "distance_threshold_scene_counts.csv", distance_counts)
     write_csv(out_dir / "rmse_threshold_scene_counts.csv", rmse_counts)
     for threshold in distance_thresholds:
