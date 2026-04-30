@@ -90,10 +90,11 @@ INDEX_HTML = """<!doctype html>
     .badge.gold { background: rgba(228, 172, 69, 0.18); color: #f4d38e; }
     .content {
       display: grid;
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(104px, 148px);
       gap: 10px;
       min-height: 0;
       overflow: hidden;
+      width: 100%;
     }
     .panel {
       min-height: 0;
@@ -126,17 +127,9 @@ INDEX_HTML = """<!doctype html>
       object-fit: contain;
       display: block;
     }
-    .explain {
-      font-size: 13px;
-      line-height: 1.45;
-      color: var(--muted);
-    }
     .inspection-strip {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(520px, 1.2fr);
-      gap: 10px;
-      min-height: 132px;
-      max-height: 170px;
+      min-height: 0;
+      width: 100%;
     }
     .table-wrap {
       overflow: auto;
@@ -212,16 +205,6 @@ INDEX_HTML = """<!doctype html>
         <div class="image-wrap"><img id="annotatedReferenceImg"></div>
       </div>
       <div class="inspection-strip">
-        <div class="panel">
-          <h2>How To Read This</h2>
-          <div class="explain">
-            Scene removal is controlled by percentage error, not the histogram bars directly.
-            A scene fails the 5% rule if any sampled correspondence has local depth disagreement
-            greater than 5% of that picked point's 3D range. For 0-10 m points, 1% means up to
-            0.01-0.10 m depending on the point distance; 5% means up to 0.05-0.50 m.
-            Numbered markers match the table rows.
-          </div>
-        </div>
         <div class="panel">
           <h2>Sampled Correspondences</h2>
           <div class="table-wrap">
