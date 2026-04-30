@@ -412,6 +412,16 @@ def main() -> None:
             )
         )
         write_csv(out_dir / f"scenes_accepted_by_distance_{threshold:g}pct_with_drop_rule.csv", accepted_with_drop_rule)
+        for rmse_threshold in rmse_thresholds:
+            accepted_with_rmse = [
+                row
+                for row in accepted_with_drop_rule
+                if row.get(f"rmse_pass_le_{rmse_threshold:g}px") is True
+            ]
+            write_csv(
+                out_dir / f"scenes_accepted_by_rmse{rmse_threshold:g}px_distance_{threshold:g}pct_with_drop_rule.csv",
+                accepted_with_rmse,
+            )
         recovered = [
             row
             for row in scene_rows
