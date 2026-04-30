@@ -117,7 +117,12 @@ def preprocessed_las_for_scene(scene, preprocess_suffix: str) -> Path | None:
 
 def ensure_reference_png(scene, scene_dir: Path, ref_target: Path) -> str:
     if scene.reference_png_path is not None and scene.reference_png_path.exists():
-        shutil.copy2(scene.reference_png_path, ref_target)
+        try:
+            same_file = scene.reference_png_path.resolve() == ref_target.resolve()
+        except FileNotFoundError:
+            same_file = False
+        if not same_file:
+            shutil.copy2(scene.reference_png_path, ref_target)
         return str(scene.reference_png_path)
     hdr_path = scene.reference_hdr_path or resolve_hsi_hdr(scene_dir, scene.collection, scene.path_key, scene.step_dir)
     if hdr_path is None:
