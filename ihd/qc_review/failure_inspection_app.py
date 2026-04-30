@@ -2,8 +2,10 @@ import argparse
 import csv
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import cv2
+import numpy as np
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -353,24 +355,21 @@ class FailureInspectionService:
     def _current_scene(self) -> dict[str, str]:
         return self.scenes[self.current_index]
 
-    def _path_for_current(self, kind: str) -> Path:
-        scene = self._current_scene()
+    def _path_for_scene(self, scene: dict[str, str], kind: str, index: int | None = None) -> Path:
         if kind == "overlay":
             return Path(scene["disk_overlay"])
         if kind == "reference":
             return Path(scene["disk_reference"])
         if kind == "annotated-reference":
-            return self._annotated_reference_path(self.current_index)
+            if index is None:
+                raise ValueError("Annotated reference requests require a scene index.")
+            return self._annotated_reference_path(index)
         if kind == "reprojection":
             fit_path = Path(scene["fit_path"])
             return fit_path.parent / "reprojection_preview.png"
         raise ValueError(f"Unsupported image kind: {kind}")
 
     def _reference_base_path(self, scene: dict[str, str]) -> Path:
-        fit_path = Path(scene["fit_path"])
-        preview = fit_path.parent / "image_preview.png"
-        if preview.exists():
-            return preview
         return Path(scene["disk_reference"])
 
     def _points_for_scene(self, scene: dict[str, str]) -> list[dict[str, Any]]:
@@ -399,13 +398,25 @@ class FailureInspectionService:
         scene = self.scenes[index]
         out_path = FAILURE_CACHE_ROOT / scene["collection"] / scene["path"] / scene["step"] / "annotated_reference.png"
         source = self._reference_base_path(scene)
-        if out_path.exists() and out_path.stat().st_mtime >= source.stat().st_mtime:
-            return out_path
+        overlay_path = Path(scene["disk_overlay"])
+        overlay = cv2.imread(str(overlay_path), cv2.IMREAD_COLOR)
+        if overlay is None:
+            raise FileNotFoundError(overlay_path)
+        target_height, target_width = overlay.shape[:2]
+        if out_path.exists() and out_path.stat().st_mtime >= max(source.stat().st_mtime, overlay_path.stat().st_mtime):
+            cached = cv2.imread(str(out_path), cv2.IMREAD_COLOR)
+            if cached is not None and cached.shape[:2] == (target_height, target_width):
+                return out_path
 
         img = cv2.imread(str(source), cv2.IMREAD_COLOR)
         if img is None:
             raise FileNotFoundError(source)
 
+        image_height, image_width = img.shape[:2]
+        if target_height >= image_height and target_width >= image_width:
+            canvas = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+            canvas[:image_height, :image_width] = img
+            img = canvas
         height, width = img.shape[:2]
         points = self._points_for_scene(scene)
         for point in points:
@@ -446,15 +457,14 @@ class FailureInspectionService:
     def image_path(self, index: int, kind: str) -> Path:
         if not (0 <= index < len(self.scenes)):
             raise IndexError(f"Invalid scene index: {index}")
-        old_index = self.current_index
-        self.current_index = index
-        try:
-            path = self._path_for_current(kind)
-        finally:
-            self.current_index = old_index
+        path = self._path_for_scene(self.scenes[index], kind, index)
         if not path.exists():
             raise FileNotFoundError(path)
         return path
+
+    def _image_url(self, index: int, kind: str, scene: dict[str, str]) -> str:
+        key = quote(f"{scene['collection']}|{scene['path']}|{scene['step']}")
+        return f"/api/scene/{index}/{kind}?scene={key}"
 
     def state(self) -> dict[str, Any]:
         scene = self._current_scene()
@@ -475,10 +485,10 @@ class FailureInspectionService:
                 "distance_points_gt_1pct": to_int(scene.get("distance_points_gt_1pct", "")),
                 "distance_points_gt_5pct": to_int(scene.get("distance_points_gt_5pct", "")),
                 "distance_pass_5pct": scene.get("distance_pass_all_points_le_5pct") == "True",
-                "overlay_url": f"/api/scene/{self.current_index}/overlay",
-                "reference_url": f"/api/scene/{self.current_index}/reference",
-                "reprojection_url": f"/api/scene/{self.current_index}/reprojection",
-                "annotated_reference_url": f"/api/scene/{self.current_index}/annotated-reference",
+                "overlay_url": self._image_url(self.current_index, "overlay", scene),
+                "reference_url": self._image_url(self.current_index, "reference", scene),
+                "reprojection_url": self._image_url(self.current_index, "reprojection", scene),
+                "annotated_reference_url": self._image_url(self.current_index, "annotated-reference", scene),
                 "points": points,
             },
         }
@@ -514,7 +524,7 @@ def build_app(service: FailureInspectionService) -> FastAPI:
     @app.get("/api/scene/{index}/{kind}")
     async def image(index: int, kind: str) -> FileResponse:
         try:
-            return FileResponse(service.image_path(index, kind))
+            return FileResponse(service.image_path(index, kind), headers={"Cache-Control": "no-store"})
         except (IndexError, FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

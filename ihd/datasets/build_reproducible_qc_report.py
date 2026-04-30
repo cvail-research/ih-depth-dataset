@@ -110,6 +110,7 @@ def summarize_scene_depth(rows: list[dict[str, str]], thresholds: list[float]) -
             "step": key[2],
             "distance_sampled_points": int(len(percent_errors)),
             "distance_missing_points": int(len(missing)),
+            "distance_total_correspondence_attempts": int(len(percent_errors) + len(missing)),
             "distance_scene_error_count": int(len(scene_errors)),
             "distance_has_evidence": bool(len(percent_errors) > 0),
             "distance_max_percent": float(np.max(percent_errors)) if len(percent_errors) else math.nan,
@@ -123,6 +124,15 @@ def summarize_scene_depth(rows: list[dict[str, str]], thresholds: list[float]) -
             name = f"distance_pass_all_points_le_{threshold:g}pct"
             summary[name] = bool(len(percent_errors) > 0 and len(missing) == 0 and len(scene_errors) == 0 and np.max(percent_errors) <= threshold)
             summary[f"distance_points_gt_{threshold:g}pct"] = int(np.sum(percent_errors > threshold))
+            kept_after_drop = int(np.sum(percent_errors <= threshold))
+            dropped_problematic = int(np.sum(percent_errors > threshold) + len(missing))
+            summary[f"distance_points_kept_after_drop_gt_{threshold:g}pct"] = kept_after_drop
+            summary[f"distance_points_dropped_gt_{threshold:g}pct_or_missing"] = dropped_problematic
+            summary[f"distance_pass_after_drop_gt_{threshold:g}pct_min8"] = bool(
+                len(scene_errors) == 0
+                and (len(percent_errors) + len(missing)) >= 9
+                and kept_after_drop >= 8
+            )
         summaries[key] = summary
     return summaries
 
@@ -164,6 +174,7 @@ def build_scene_table(
                 {
                     "distance_sampled_points": 0,
                     "distance_missing_points": 0,
+                    "distance_total_correspondence_attempts": 0,
                     "distance_scene_error_count": 0,
                     "distance_has_evidence": False,
                 }
@@ -171,6 +182,9 @@ def build_scene_table(
             for threshold in distance_thresholds:
                 out[f"distance_pass_all_points_le_{threshold:g}pct"] = False
                 out[f"distance_points_gt_{threshold:g}pct"] = ""
+                out[f"distance_points_kept_after_drop_gt_{threshold:g}pct"] = ""
+                out[f"distance_points_dropped_gt_{threshold:g}pct_or_missing"] = ""
+                out[f"distance_pass_after_drop_gt_{threshold:g}pct_min8"] = False
         for threshold in distance_thresholds:
             out[f"candidate_include_rmse10_distance{threshold:g}pct"] = bool(
                 out.get("rmse_pass_le_10px") and out.get(f"distance_pass_all_points_le_{threshold:g}pct")
@@ -184,8 +198,16 @@ def make_threshold_counts(scene_rows: list[dict[str, Any]], distance_thresholds:
     rows: list[dict[str, Any]] = []
     for threshold in distance_thresholds:
         pass_key = f"distance_pass_all_points_le_{threshold:g}pct"
+        relaxed_key = f"distance_pass_after_drop_gt_{threshold:g}pct_min8"
         rmse_distance_key = f"candidate_include_rmse10_distance{threshold:g}pct"
         pass_distance = sum(1 for row in scene_rows if row.get(pass_key) is True)
+        pass_relaxed = sum(1 for row in scene_rows if row.get(relaxed_key) is True)
+        recovered = sum(
+            1
+            for row in scene_rows
+            if row.get(pass_key) is not True and row.get(relaxed_key) is True
+        )
+        pass_with_drop_rule = pass_distance + recovered
         pass_both = sum(1 for row in scene_rows if row.get(rmse_distance_key) is True)
         rows.append(
             {
@@ -193,6 +215,10 @@ def make_threshold_counts(scene_rows: list[dict[str, Any]], distance_thresholds:
                 "scenes_pass": pass_distance,
                 "scenes_fail_or_missing": total - pass_distance,
                 "scenes_lost": total - pass_distance,
+                "scenes_pass_after_dropping_problem_points_min8": pass_relaxed,
+                "scenes_accepted_with_drop_rule": pass_with_drop_rule,
+                "scenes_recovered_by_drop_rule": recovered,
+                "scenes_fail_with_drop_rule": total - pass_with_drop_rule,
                 "scenes_pass_with_rmse_le_10px": pass_both,
                 "scenes_lost_with_rmse_le_10px": total - pass_both,
                 "total_scenes": total,
@@ -369,6 +395,20 @@ def main() -> None:
             )
         )
         write_csv(out_dir / f"scenes_failing_distance_{threshold:g}pct.csv", failing)
+        recovered = [
+            row
+            for row in scene_rows
+            if row.get(f"distance_pass_all_points_le_{threshold:g}pct") is not True
+            and row.get(f"distance_pass_after_drop_gt_{threshold:g}pct_min8") is True
+        ]
+        write_csv(out_dir / f"scenes_recovered_by_dropping_distance_{threshold:g}pct.csv", recovered)
+        still_failing_after_drop = [
+            row
+            for row in scene_rows
+            if row.get(f"distance_pass_all_points_le_{threshold:g}pct") is not True
+            and row.get(f"distance_pass_after_drop_gt_{threshold:g}pct_min8") is not True
+        ]
+        write_csv(out_dir / f"scenes_still_failing_after_dropping_distance_{threshold:g}pct.csv", still_failing_after_drop)
 
     plot_distance_percent_histograms(depth_rows, out_dir / "distance_error_percent_by_range.png")
     plot_single_range_distance_histograms(depth_rows, out_dir)
