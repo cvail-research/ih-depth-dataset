@@ -400,6 +400,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Run the IH-Depth QC review web app.")
     ap.add_argument("--reviewer-id", required=True, help="Reviewer identifier used for saved outputs.")
     ap.add_argument("--results-root", default=str(Path("analysis/lidar_labeling")), help="Primary results root for labeled scenes; annotation workspace pools are merged automatically.")
+    ap.add_argument("--scene-list-csv", default=None, help="Optional CSV with collection,path,step columns to review only a subset of scenes.")
     ap.add_argument("--data-root", default="/disk", help="Dataset root containing original DARPA scene folders.")
     ap.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to.")
     ap.add_argument("--port", type=int, default=8765, help="Port to bind the web server to.")
@@ -412,6 +413,7 @@ def main() -> None:
         reviewer_id=args.reviewer_id,
         results_root=Path(args.results_root),
         data_root=Path(args.data_root),
+        scene_list_csv=Path(args.scene_list_csv) if args.scene_list_csv else None,
     )
     app = build_app(service)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

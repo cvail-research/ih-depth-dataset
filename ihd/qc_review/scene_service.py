@@ -1,5 +1,6 @@
 import json
 import time
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -124,7 +125,29 @@ def scene_uid(collection: str, path_key: str, step_dir: str) -> str:
     return f"{collection}/{path_key}/{step_dir}"
 
 
-def discover_qc_scenes(results_root: Path, data_root: Path, cache_root: Path) -> list["SceneRecord"]:
+def load_scene_list_csv(path: Path | None) -> set[str] | None:
+    if path is None:
+        return None
+    with path.open("r", newline="") as f:
+        rows = list(csv.DictReader(f))
+    scene_ids = set()
+    for row in rows:
+        collection = row.get("collection", "").strip()
+        path_key = (row.get("path") or row.get("path_key") or "").strip()
+        step_dir = (row.get("step") or row.get("step_dir") or "").strip()
+        if collection and path_key and step_dir:
+            scene_ids.add(scene_uid(collection, path_key, step_dir))
+    if not scene_ids:
+        raise ValueError(f"No scene identifiers found in {path}")
+    return scene_ids
+
+
+def discover_qc_scenes(
+    results_root: Path,
+    data_root: Path,
+    cache_root: Path,
+    scene_list_csv: Path | None = None,
+) -> list["SceneRecord"]:
     analysis_root = results_root.parent
     annotation_roots = (
         analysis_root / "annotation_workspace",
@@ -246,8 +269,17 @@ def discover_qc_scenes(results_root: Path, data_root: Path, cache_root: Path) ->
             continue
         merged[uid] = ann_scene
 
+    scene_filter = load_scene_list_csv(scene_list_csv)
+    scene_values = list(merged.values())
+    if scene_filter is not None:
+        scene_values = [
+            scene
+            for scene in scene_values
+            if scene_uid(scene.collection, scene.path_key, scene.step_dir) in scene_filter
+        ]
+
     scenes = sorted(
-        merged.values(),
+        scene_values,
         key=lambda s: (s.collection, s.path_key, s.step_dir),
     )
     for idx, scene in enumerate(scenes):
@@ -422,6 +454,7 @@ class QCSceneService:
         reviewer_id: str,
         results_root: Path = DEFAULT_RESULTS_ROOT,
         data_root: Path = Path("/disk"),
+        scene_list_csv: Path | None = None,
     ):
         self.reviewer_id = reviewer_id
         self.results_root = results_root
@@ -433,6 +466,7 @@ class QCSceneService:
             results_root=self.results_root,
             data_root=self.data_root,
             cache_root=self.cache_root,
+            scene_list_csv=scene_list_csv,
         )
         self.session = QCReviewSession(
             reviewer_id=reviewer_id,

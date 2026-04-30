@@ -12,14 +12,15 @@ set -euo pipefail
 
 mkdir -p logs/out logs/err
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
-  echo "Usage: sbatch $0 <reviewer_id> [<results_root>] [<port>]" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
+  echo "Usage: sbatch $0 <reviewer_id> [<results_root>] [<port>] [<scene_list_csv>]" >&2
   exit 1
 fi
 
 REVIEWER_ID="$1"
 RESULTS_ROOT="${2:-analysis/lidar_labeling}"
 PORT="${3:-8765}"
+SCENE_LIST_CSV="${4:-}"
 REPO_ROOT="${SLURM_SUBMIT_DIR}"
 
 cd "${REPO_ROOT}"
@@ -28,13 +29,21 @@ export PYTHONUNBUFFERED=1
 echo "IH-Depth QC review starting on host $(hostname -s) port ${PORT}"
 echo "Reviewer: ${REVIEWER_ID}"
 echo "Results root: ${RESULTS_ROOT}"
+echo "Scene list CSV: ${SCENE_LIST_CSV:-<all discovered scenes>}"
 echo "Session outputs: ${REPO_ROOT}/analysis/qc_review/sessions/${REVIEWER_ID}"
 echo "Local forwarding command:"
 echo "ssh -N -L ${PORT}:\$(ssh YOUR_WORKSTATION_HOST \"squeue -n ih_qc_review -h -o %N | head -n 1\"):${PORT} YOUR_WORKSTATION_HOST"
 
-srun uv run python -m ihd.qc_review.app \
-  --reviewer-id "${REVIEWER_ID}" \
-  --results-root "${RESULTS_ROOT}" \
-  --data-root /disk \
-  --host 0.0.0.0 \
+ARGS=(
+  --reviewer-id "${REVIEWER_ID}"
+  --results-root "${RESULTS_ROOT}"
+  --data-root /disk
+  --host 0.0.0.0
   --port "${PORT}"
+)
+
+if [ -n "${SCENE_LIST_CSV}" ]; then
+  ARGS+=(--scene-list-csv "${SCENE_LIST_CSV}")
+fi
+
+srun uv run python -m ihd.qc_review.app "${ARGS[@]}"
