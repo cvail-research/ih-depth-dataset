@@ -118,13 +118,14 @@ INDEX_HTML = """<!doctype html>
       border-radius: 10px;
       overflow: hidden;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
     }
     img {
       width: 100%;
-      height: 100%;
-      object-fit: contain;
+      height: auto;
+      max-height: 100%;
+      object-fit: scale-down;
       display: block;
     }
     .inspection-strip {
