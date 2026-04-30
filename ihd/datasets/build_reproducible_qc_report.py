@@ -395,6 +395,22 @@ def main() -> None:
             )
         )
         write_csv(out_dir / f"scenes_failing_distance_{threshold:g}pct.csv", failing)
+        accepted_with_drop_rule = [
+            row
+            for row in scene_rows
+            if row.get(f"distance_pass_all_points_le_{threshold:g}pct") is True
+            or row.get(f"distance_pass_after_drop_gt_{threshold:g}pct_min8") is True
+        ]
+        accepted_with_drop_rule.sort(
+            key=lambda row: (
+                row.get(f"distance_pass_all_points_le_{threshold:g}pct") is not True,
+                -float(row.get("distance_max_percent") or -1)
+                if np.isfinite(float(row.get("distance_max_percent") or math.nan))
+                else 1,
+                row["scene"],
+            )
+        )
+        write_csv(out_dir / f"scenes_accepted_by_distance_{threshold:g}pct_with_drop_rule.csv", accepted_with_drop_rule)
         recovered = [
             row
             for row in scene_rows

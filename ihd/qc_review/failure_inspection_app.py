@@ -272,7 +272,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('overlayImg').src = scene.overlay_url;
       document.getElementById('annotatedReferenceImg').src = scene.annotated_reference_url;
       document.getElementById('statusText').textContent =
-        `Failure table: ${state.failure_csv} | Showing scenes failing ${state.threshold_percent}% rule`;
+        `Scene table: ${state.failure_csv} | Threshold context: ${state.threshold_percent}% distance rule`;
 
       const rows = scene.points.map((p) => {
         let cls = '';
