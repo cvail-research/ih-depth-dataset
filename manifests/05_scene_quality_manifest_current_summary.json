@@ -12,7 +12,7 @@
   "fit_ready_count": 274,
   "good_scene_timed_count_plausible": 109,
   "good_scene_total_annotation_time_hours_plausible": 9.182610744166666,
-  "manifest": "manifests/quality/scene_quality_manifest_current.csv",
+  "manifest": "manifests/05_scene_quality_manifest_current.csv",
   "mean_annotation_time_minutes_plausible": 5.463434746212121,
   "mean_rmse_px": 13.547381974953819,
   "median_annotation_time_minutes_plausible": 4.449786475,
