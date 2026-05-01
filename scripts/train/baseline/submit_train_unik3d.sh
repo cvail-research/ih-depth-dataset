@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 cd "${REPO_ROOT}"
 mkdir -p logs/out logs/err
 
@@ -18,7 +18,7 @@ TRAIN_MANIFEST="${1:?Usage: sbatch $0 <train_manifest.csv> <val_manifest.csv> [o
 VAL_MANIFEST="${2:?Usage: sbatch $0 <train_manifest.csv> <val_manifest.csv> [out_dir]}"
 OUT_DIR="${3:-analysis/training/unik3d/$(date +%Y%m%d_%H%M%S)}"
 
-scripts/train/run_train_unik3d.sh \
+scripts/train/baseline/run_train_unik3d.sh \
   --train-manifest "${TRAIN_MANIFEST}" \
   --val-manifest "${VAL_MANIFEST}" \
   --out-dir "${OUT_DIR}" \

@@ -4,7 +4,7 @@ This folder contains human-facing notes for IH-Depth training runs. Importable
 training code lives under `ihd/training`, and Slurm/local launchers live under
 `scripts/train`.
 
-## Depth Anything V2
+## Baseline Depth Anything V2
 
 The first training target is Depth Anything V2 fine-tuned from pseudo-broadband
 LWHSI inputs to projected LiDAR depth labels.
@@ -17,7 +17,7 @@ Expected input manifests are CSV files with at least:
 Launch on Slurm from the repo root:
 
 ```bash
-sbatch scripts/train/submit_train_depthanythingv2.sh \
+sbatch scripts/train/baseline/submit_train_depthanythingv2.sh \
   path/to/train_manifest.csv \
   path/to/val_manifest.csv \
   analysis/training/depthanythingv2/first_run
@@ -48,8 +48,24 @@ and optimizes the predicted metric `depth` with SiLog loss.
 Launch on Slurm from the repo root:
 
 ```bash
-sbatch scripts/train/submit_train_unik3d.sh \
+sbatch scripts/train/baseline/submit_train_unik3d.sh \
   path/to/train_manifest.csv \
   path/to/val_manifest.csv \
   analysis/training/unik3d/first_run
+```
+
+## HSI Depth Anything V2
+
+The HSI trainer keeps the full LWHSI cube and adapts the Depth Anything V2 patch
+embedding from 3 input channels to `B` hyperspectral bands. It uses the same
+manifest format, projected depth labels, SiLog loss, checkpoints, previews, and
+optional W&B logging as the baseline trainer.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/hsi/submit_train_depthanythingv2_hsi.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/depthanythingv2_hsi/first_run
 ```

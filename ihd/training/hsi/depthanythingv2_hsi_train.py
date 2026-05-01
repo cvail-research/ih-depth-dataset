@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
 
-from ihd.evaluation.model_io import load_pseudobroadband_rgb
+from ihd.hsi.depthanythingv2_hsi import (
+    adapt_depthanythingv2_patch_embedding,
+    dino_compatible_size,
+    load_hsi_tensor,
+)
 from ihd.training.utils import (
     batch_metrics,
     init_wandb,
@@ -25,7 +29,7 @@ from ihd.training.utils import (
 )
 
 
-MODEL_SLUG = "depthanythingv2"
+MODEL_SLUG = "depthanythingv2_hsi_patch"
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,8 @@ class TrainConfig:
     out_dir: str
     model_name: str
     device: str
+    input_height: int
+    normalization: str
     epochs: int
     batch_size: int
     learning_rate: float
@@ -58,7 +64,7 @@ class TrainConfig:
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description=(
-            "Fine-tune Depth Anything V2 on IH pseudo-broadband LWHSI inputs and "
+            "Fine-tune Depth Anything V2 with a full-LWHSI patch embedding and "
             "projected LiDAR depth labels."
         )
     )
@@ -67,6 +73,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--input-height", type=int, default=518)
+    ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--learning-rate", type=float, default=1e-5)
@@ -88,10 +96,10 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-class IHDepthDataset:
-    def __init__(self, manifest: str | Path, processor: Any):
+class IHDepthHSIDataset:
+    def __init__(self, manifest: str | Path, *, normalization: str):
         self.rows = read_manifest(manifest)
-        self.processor = processor
+        self.normalization = normalization
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -100,33 +108,48 @@ class IHDepthDataset:
         import torch
 
         row = self.rows[idx]
-        rgb, _ = load_pseudobroadband_rgb(row["hdr_path"])
+        hsi, hsi_meta = load_hsi_tensor(row["hdr_path"], normalization=self.normalization)
         depth, mask = load_depth_label(row["label_path"])
-
-        image = Image.fromarray(rgb)
-        inputs = self.processor(images=image, return_tensors="pt")
         return {
-            "pixel_values": inputs["pixel_values"].squeeze(0),
+            "hsi": hsi,
             "depth_m": torch.from_numpy(depth),
             "valid_mask": torch.from_numpy(mask),
             "scene": scene_label(row),
             "hdr_path": row["hdr_path"],
             "label_path": row["label_path"],
+            "num_hsi_channels": hsi_meta["num_hsi_channels"],
         }
+
+
+def infer_num_channels(manifest: str | Path, *, normalization: str) -> int:
+    row = read_manifest(manifest)[0]
+    hsi, _ = load_hsi_tensor(row["hdr_path"], normalization=normalization)
+    return int(hsi.shape[0])
 
 
 def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     import torch
+    import torch.nn.functional as F
 
-    depths, masks, _, _ = pad_depth_and_mask_items(batch)
+    channel_counts = {int(b["hsi"].shape[0]) for b in batch}
+    if len(channel_counts) != 1:
+        raise ValueError(f"Cannot batch scenes with different HSI channel counts: {sorted(channel_counts)}")
+
+    depths, masks, max_h, max_w = pad_depth_and_mask_items(batch)
+    images = []
+    for item in batch:
+        _, h, w = item["hsi"].shape
+        pad = (0, max_w - w, 0, max_h - h)
+        images.append(F.pad(item["hsi"], pad, value=0.0))
 
     return {
-        "pixel_values": torch.stack([b["pixel_values"] for b in batch], dim=0),
+        "pixel_values": torch.stack(images, dim=0),
         "depth_m": depths,
         "valid_mask": masks,
         "scene": [b["scene"] for b in batch],
         "hdr_path": [b["hdr_path"] for b in batch],
         "label_path": [b["label_path"] for b in batch],
+        "num_hsi_channels": sorted(channel_counts)[0],
     }
 
 
@@ -139,10 +162,19 @@ def move_batch_to_device(batch: dict[str, Any], device) -> dict[str, Any]:
     }
 
 
-def predict_depth(model, pixel_values, target_hw: tuple[int, int]):
+def predict_depth(model, pixel_values, target_hw: tuple[int, int], *, input_height: int):
     import torch.nn.functional as F
 
-    outputs = model(pixel_values=pixel_values)
+    _, _, padded_h, padded_w = pixel_values.shape
+    projection = model.backbone.embeddings.patch_embeddings.projection
+    if int(pixel_values.shape[1]) != int(projection.in_channels):
+        raise ValueError(
+            f"Model patch embedding expects {projection.in_channels} channels but batch has {pixel_values.shape[1]}."
+        )
+    patch_size = int(projection.kernel_size[0])
+    resized_h, resized_w = dino_compatible_size(padded_h, padded_w, input_height, patch_size)
+    model_input = F.interpolate(pixel_values, size=(resized_h, resized_w), mode="bilinear", align_corners=False)
+    outputs = model(pixel_values=model_input)
     pred = outputs.predicted_depth
     if pred.ndim == 3:
         pred = pred.unsqueeze(1)
@@ -150,13 +182,12 @@ def predict_depth(model, pixel_values, target_hw: tuple[int, int]):
     return pred.squeeze(1)
 
 
-def save_checkpoint(out_dir: Path, model, processor, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
+def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
     import torch
 
     ckpt_dir = out_dir / "checkpoints" / f"step_{step:07d}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(ckpt_dir / "model")
-    processor.save_pretrained(ckpt_dir / "processor")
     torch.save(
         {
             "step": step,
@@ -181,7 +212,7 @@ def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None
                 break
             batch = move_batch_to_device(batch, device)
             target_hw = tuple(batch["depth_m"].shape[-2:])
-            pred = predict_depth(model, batch["pixel_values"], target_hw)
+            pred = predict_depth(model, batch["pixel_values"], target_hw, input_height=config.input_height)
             loss = silog_loss(
                 pred,
                 batch["depth_m"],
@@ -219,15 +250,17 @@ def main() -> None:
 
     import torch
     from torch.utils.data import DataLoader
-    from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+    from transformers import AutoModelForDepthEstimation
 
     device = torch.device(config.device if config.device == "cpu" or torch.cuda.is_available() else "cpu")
-    processor = AutoImageProcessor.from_pretrained(config.model_name)
-    model = AutoModelForDepthEstimation.from_pretrained(config.model_name).to(device)
+    num_channels = infer_num_channels(config.train_manifest, normalization=config.normalization)
+    model = AutoModelForDepthEstimation.from_pretrained(config.model_name)
+    adapt_depthanythingv2_patch_embedding(model, num_channels)
+    model = model.to(device)
     model.train()
 
-    train_ds = IHDepthDataset(config.train_manifest, processor)
-    val_ds = IHDepthDataset(config.val_manifest, processor)
+    train_ds = IHDepthHSIDataset(config.train_manifest, normalization=config.normalization)
+    val_ds = IHDepthHSIDataset(config.val_manifest, normalization=config.normalization)
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
@@ -247,7 +280,10 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     run = init_wandb(config)
 
-    print(f"Training {config.model_name} on {len(train_ds)} scenes; validating on {len(val_ds)} scenes.")
+    print(
+        f"Training {config.model_name} with {num_channels} HSI channels on {len(train_ds)} scenes; "
+        f"validating on {len(val_ds)} scenes."
+    )
     print(f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}")
 
     step = 0
@@ -255,10 +291,14 @@ def main() -> None:
     last_pred = None
     for epoch in range(config.epochs):
         for batch in train_loader:
+            if int(batch["num_hsi_channels"]) != num_channels:
+                raise ValueError(
+                    f"Model was initialized for {num_channels} channels but batch has {batch['num_hsi_channels']}."
+                )
             step += 1
             batch = move_batch_to_device(batch, device)
             target_hw = tuple(batch["depth_m"].shape[-2:])
-            pred = predict_depth(model, batch["pixel_values"], target_hw)
+            pred = predict_depth(model, batch["pixel_values"], target_hw, input_height=config.input_height)
             last_pred = (pred, batch["depth_m"], batch["valid_mask"])
             loss = silog_loss(
                 pred,
@@ -302,7 +342,7 @@ def main() -> None:
                     save_prediction_preview(out_dir, step, *last_pred)
 
             if step % config.checkpoint_every_steps == 0:
-                ckpt_dir = save_checkpoint(out_dir, model, processor, optimizer, step, epoch, config)
+                ckpt_dir = save_checkpoint(out_dir, model, optimizer, step, epoch, config)
                 print(f"Saved checkpoint: {ckpt_dir}")
 
             if config.max_train_steps is not None and step >= config.max_train_steps:
@@ -315,7 +355,7 @@ def main() -> None:
     (out_dir / "final_metrics.json").write_text(json.dumps(final_metrics, indent=2, sort_keys=True) + "\n")
     if last_pred:
         save_prediction_preview(out_dir, step, *last_pred)
-    ckpt_dir = save_checkpoint(out_dir, model, processor, optimizer, step, config.epochs - 1, config)
+    ckpt_dir = save_checkpoint(out_dir, model, optimizer, step, config.epochs - 1, config)
     print(f"Saved final checkpoint: {ckpt_dir}")
     print(json.dumps(final_metrics, sort_keys=True))
     if run:
