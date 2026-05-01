@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--results-root", default="analysis/lidar_labeling")
     ap.add_argument("--workspace-root", default=str(WORKSPACE_ROOT_NO_CYL))
-    ap.add_argument("--preprocess-suffix", default="platform_sphere_r2p5")
+    ap.add_argument("--preprocess-suffix", default="platform_sphere_r4p0")
     ap.add_argument("--collection-filter", default="")
     ap.add_argument("--path-filter", default="")
     ap.add_argument("--overwrite", action="store_true")

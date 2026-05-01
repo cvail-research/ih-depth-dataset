@@ -1,5 +1,5 @@
 collection,scope,path_name,platform_center_x,platform_center_y,platform_center_z,platform_sphere_radius_m,projection_voxel_m,sor_k,sor_std_ratio,method
 IHTest_202009_DistStA,path,Path8_DistStA,48.39033,-10.942251,101.885519,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path1_DistStA,-0.437581,-0.012369,-0.188484,2.5,0.03,50,2.0,manual
-IHTest_202108_DistStA,collection,,-0.109999,-0.001428,-0.155019,2.5,0.03,50,2.0,manual
-IHTest_202204_DistStA-20221110,collection,,-0.109999,-0.001428,-0.155019,2.5,0.03,50,2.0,manual
+IHTest_202104_DistStA,path,Path1_DistStA,-0.437581,-0.012369,-0.188484,4.0,0.03,50,2.0,manual
+IHTest_202108_DistStA,collection,,-0.109999,-0.001428,-0.155019,4.0,0.03,50,2.0,manual
+IHTest_202204_DistStA-20221110,collection,,-0.109999,-0.001428,-0.155019,4.0,0.03,50,2.0,manual

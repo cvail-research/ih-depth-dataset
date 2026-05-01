@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument(
         "--preprocess-suffix",
-        default="platform_sphere_r2p5",
+        default="platform_sphere_r4p0",
         help="Preferred preprocessing suffix under analysis/lidar_preprocessing.",
     )
     ap.add_argument(
@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument(
         "--depth-label-root",
-        default="analysis/depth_labels/platform_sphere_r2p5",
+        default="analysis/depth_labels/platform_sphere_r4p0",
         help="Root directory for saved depth-label NPZ files when --save-depth-labels is set.",
     )
     ap.add_argument(

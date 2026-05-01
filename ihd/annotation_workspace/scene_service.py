@@ -102,8 +102,16 @@ def resolve_preprocessed_las(collection: str, path_name: str, step: int | str, k
         raise FileNotFoundError(
             f"Missing preprocessed {kind} LAS for {collection} {path_name} step {step}: {pre_dir}"
         )
-    candidates.sort()
-    return candidates[0]
+
+    def _mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except FileNotFoundError:
+            return -1.0
+
+    # Prefer the newest preprocessing output so a corrected metadata-driven
+    # platform sphere can supersede older exploratory variants.
+    return max(candidates, key=lambda p: (_mtime(p), str(p)))
 
 
 def load_gray_preview(hdr_path: Path) -> np.ndarray:
@@ -481,6 +489,14 @@ class SceneWorkspace:
 
     def get_scene_payload(self) -> dict[str, Any]:
         scene = self._read_json(self.scene_json_path)
+
+        # Keep scene metadata in sync with the newest available preprocessing output.
+        preprocess_status = self.get_preprocess_status()
+        scene["preprocessing"] = preprocess_status
+        source_paths = scene.get("source_paths")
+        if isinstance(source_paths, dict):
+            source_paths["projection_las"] = preprocess_status.get("projection_las")
+
         picks = self.get_picks()["picks"]
         picked_count = sum(1 for p in picks if p["status"] == "picked")
         scene["picks_summary"] = {
@@ -729,6 +745,12 @@ class SceneWorkspace:
     def get_pointcloud_payload(self) -> dict[str, Any]:
         if not self.preprocessing_ready() or self.projection_las is None:
             raise FileNotFoundError("Preprocessing is not ready yet for this scene.")
+
+        # Invalidate cached payload if preprocessing output changed on disk.
+        current_source = str(self.projection_las)
+        if self._pointcloud_payload is not None and self._pointcloud_payload.get("source_las") != current_source:
+            self._pointcloud_payload = None
+
         if self._pointcloud_payload is None:
             las_path = self.projection_las
             las = laspy.read(las_path)

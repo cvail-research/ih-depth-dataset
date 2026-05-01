@@ -25,6 +25,6 @@ fi
 srun uv run python -m ihd.datasets.migrate_lidar_labeling_to_nocyl \
   --results-root analysis/lidar_labeling \
   --workspace-root analysis/annotation_workspace_nocyl \
-  --preprocess-suffix platform_sphere_r2p5 \
+  --preprocess-suffix platform_sphere_r4p0 \
   --manifest-out analysis/qc_review/migrated_lidar_labeling_to_nocyl_manifest.csv \
   "${EXTRA_ARGS[@]}"

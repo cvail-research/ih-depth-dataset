@@ -10,7 +10,7 @@ import pandas as pd
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Build an HDR/label manifest for baseline prediction jobs.")
     ap.add_argument("--scene-manifest", required=True, help="Frozen or accepted-scene CSV.")
-    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r2p5")
+    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--out-csv", default="analysis/evaluation/baseline_prediction_inputs.csv")
     ap.add_argument("--limit", type=int)
@@ -108,4 +108,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

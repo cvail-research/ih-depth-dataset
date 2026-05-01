@@ -16,9 +16,9 @@ REPO_ROOT="${SLURM_SUBMIT_DIR}"
 cd "${REPO_ROOT}"
 
 MISSING_LIST="analysis/annotation_workspace_nocyl/missing_without_prior_cyl_to_sync.tsv"
-SPHERE="-0.109999,-0.001428,-0.155019,2.5"
-PROFILE="projection_platform_sphere_r2p5_voxel0p03_sor50_2p0"
-SUFFIX="platform_sphere_r2p5"
+SPHERE="-0.109999,-0.001428,-0.155019,4.0"
+PROFILE="projection_platform_sphere_r4p0_voxel0p03_sor50_2p0"
+SUFFIX="platform_sphere_r4p0"
 
 if [ ! -f "${MISSING_LIST}" ]; then
   echo "Missing scene list not found: ${MISSING_LIST}" >&2

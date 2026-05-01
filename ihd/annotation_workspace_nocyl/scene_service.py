@@ -198,6 +198,14 @@ class NoCylSceneWorkspace:
 
     def get_scene_payload(self) -> dict[str, Any]:
         scene = self._read_json(self.scene_json_path)
+
+        # Keep scene metadata in sync with the newest available preprocessing output.
+        preprocess_status = self.get_preprocess_status()
+        scene["preprocessing"] = preprocess_status
+        source_paths = scene.get("source_paths")
+        if isinstance(source_paths, dict):
+            source_paths["projection_las"] = preprocess_status.get("projection_las")
+
         picks = self.get_picks()["picks"]
         picked_count = sum(1 for p in picks if p["status"] == "picked")
         scene["picks_summary"] = {
@@ -403,6 +411,12 @@ class NoCylSceneWorkspace:
     def get_pointcloud_payload(self) -> dict[str, Any]:
         if not self.preprocessing_ready() or self.projection_las is None:
             raise FileNotFoundError("Preprocessing is not ready yet for this scene.")
+
+        # Invalidate cached payload if preprocessing output changed on disk.
+        current_source = str(self.projection_las)
+        if self._pointcloud_payload is not None and self._pointcloud_payload.get("source_las") != current_source:
+            self._pointcloud_payload = None
+
         if self._pointcloud_payload is None:
             las = laspy.read(self.projection_las)
             xyz = np.column_stack((las.x, las.y, las.z)).astype(np.float32)

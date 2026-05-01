@@ -26,8 +26,8 @@ CMD=(
   uv run python -m ihd.qc_review.stage_rendered_overlays_to_disk
   --results-root analysis/lidar_labeling
   --data-root /disk
-  --preprocess-suffix platform_sphere_r2p5
-  --out-root analysis/overlay_checks/platform_sphere_r2p5
+  --preprocess-suffix platform_sphere_r4p0
+  --out-root analysis/overlay_checks/platform_sphere_r4p0
   --title-mode "${TITLE_MODE}"
   --manifest-out analysis/qc_review/staged_platform_sphere_overlays_manifest.csv
   --occlusion-filter-radius-px "${OCCLUSION_FILTER_RADIUS_PX}"

@@ -41,12 +41,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--data-root", default="/disk", help="Shared dataset root.")
     ap.add_argument(
         "--preprocess-suffix",
-        default="platform_sphere_r2p5",
+        default="platform_sphere_r4p0",
         help="Suffix appended to each step dir under analysis/lidar_preprocessing.",
     )
     ap.add_argument(
         "--out-root",
-        default=str(ANALYSIS_ROOT / "overlay_checks" / "platform_sphere_r2p5"),
+        default=str(ANALYSIS_ROOT / "overlay_checks" / "platform_sphere_r4p0"),
         help="Local root for rendered overlay copies before staging to /disk.",
     )
     ap.add_argument(
