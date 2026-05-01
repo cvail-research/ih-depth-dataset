@@ -90,9 +90,14 @@ def resolve_preprocessed_las(collection: str, path_name: str, step: int | str, k
     prefix = path_name.split("_DistStA")[0]
     step = int(step)
     pre_dir = PREPROCESS_ROOT / collection / path_key(path_name) / scene_key(path_name, step)
-    candidates = list(pre_dir.glob(f"*{prefix}_Step{step}*HiResLIDAR*_{kind}_clean.las"))
+    pre_dirs = [pre_dir]
+    pre_dirs.extend(sorted(pre_dir.parent.glob(f"{pre_dir.name}_*")))
+    candidates = []
+    for candidate_dir in pre_dirs:
+        candidates.extend(candidate_dir.glob(f"*{prefix}_Step{step}*HiResLIDAR*_{kind}_clean.las"))
     if not candidates:
-        candidates = list(pre_dir.glob(f"*HiResLIDAR*_{kind}_clean.las"))
+        for candidate_dir in pre_dirs:
+            candidates.extend(candidate_dir.glob(f"*HiResLIDAR*_{kind}_clean.las"))
     if not candidates:
         raise FileNotFoundError(
             f"Missing preprocessed {kind} LAS for {collection} {path_name} step {step}: {pre_dir}"
