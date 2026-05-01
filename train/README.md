@@ -121,3 +121,18 @@ sbatch scripts/train/hsi/submit_train_depthanythingv2_hsi.sh \
   analysis/training/depthanythingv2_hsi/full_run \
   --cache-mode disk --cache-dir analysis/training/cache/hsi_tensors
 ```
+
+## HSI UniK3D
+
+The HSI UniK3D trainer keeps the full LWHSI cube and adapts UniK3D's DINO patch
+embedding from 3 input channels to `B` hyperspectral bands. It uses UniK3D's
+panoramic padding/resizing behavior and the same projected LiDAR labels.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/hsi/submit_train_unik3d_hsi.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/unik3d_hsi/first_run
+```
