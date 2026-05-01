@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from ihd.evaluation.model_io import load_pseudobroadband_rgb
-from ihd.training.common import (
+from ihd.training.utils import (
     batch_metrics,
     init_wandb,
     load_depth_label,
