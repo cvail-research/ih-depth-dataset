@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 
 import uvicorn
@@ -7,6 +8,22 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from ihd.qc_review.scene_service import QCSceneService
+
+
+REVIEW_MODES = {
+    "label_quality": {
+        "page_title": "IH-Depth QC Review",
+        "button_1": {"label": "1 Good", "verdict": "good"},
+        "button_2": {"label": "2 Usable with caution", "verdict": "usable with caution"},
+        "button_3": {"label": "3 Bad", "verdict": "bad"},
+    },
+    "occlusion": {
+        "page_title": "IH-Depth Occlusion Review",
+        "button_1": {"label": "1 Occlusion clear", "verdict": "occlusion clear"},
+        "button_2": {"label": "2 Cleanup needed", "verdict": "occlusion cleanup needed"},
+        "button_3": {"label": "3 Reject occlusion", "verdict": "reject due to occlusion"},
+    },
+}
 
 
 INDEX_HTML = """<!doctype html>
@@ -235,6 +252,7 @@ INDEX_HTML = """<!doctype html>
   </div>
 
   <script>
+    const APP_CONFIG = __APP_CONFIG__;
     const TIMER_WARNING_SECONDS = 30.0;
     let state = null;
     let timerInterval = null;
@@ -270,6 +288,10 @@ INDEX_HTML = """<!doctype html>
     }
 
     function render() {
+      document.title = APP_CONFIG.page_title;
+      document.getElementById('goodBtn').textContent = APP_CONFIG.button_1.label;
+      document.getElementById('cautionBtn').textContent = APP_CONFIG.button_2.label;
+      document.getElementById('badBtn').textContent = APP_CONFIG.button_3.label;
       const scene = state.scene;
       const progress = state.progress;
       const sceneChanged = lastSceneIndex !== scene.index;
@@ -320,17 +342,17 @@ INDEX_HTML = """<!doctype html>
       render();
     }
 
-    document.getElementById('goodBtn').onclick = () => setVerdict('good');
-    document.getElementById('cautionBtn').onclick = () => setVerdict('usable with caution');
-    document.getElementById('badBtn').onclick = () => setVerdict('bad');
+    document.getElementById('goodBtn').onclick = () => setVerdict(APP_CONFIG.button_1.verdict);
+    document.getElementById('cautionBtn').onclick = () => setVerdict(APP_CONFIG.button_2.verdict);
+    document.getElementById('badBtn').onclick = () => setVerdict(APP_CONFIG.button_3.verdict);
     document.getElementById('nextBtn').onclick = () => navigate('next');
     document.getElementById('prevBtn').onclick = () => navigate('prev');
 
     window.addEventListener('keydown', (event) => {
       if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-      if (event.key === '1') setVerdict('good');
-      if (event.key === '2') setVerdict('usable with caution');
-      if (event.key === '3') setVerdict('bad');
+      if (event.key === '1') setVerdict(APP_CONFIG.button_1.verdict);
+      if (event.key === '2') setVerdict(APP_CONFIG.button_2.verdict);
+      if (event.key === '3') setVerdict(APP_CONFIG.button_3.verdict);
       if (event.key === 'ArrowRight') navigate('next');
       if (event.key === 'ArrowLeft') navigate('prev');
     });
@@ -351,11 +373,12 @@ class NavigationPayload(BaseModel):
 
 
 def build_app(service: QCSceneService) -> FastAPI:
-    app = FastAPI(title="IH-Depth QC Review")
+    app = FastAPI(title=service.page_title)
+    index_html = INDEX_HTML.replace("__APP_CONFIG__", json.dumps(service.review_config))
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
-        return HTMLResponse(INDEX_HTML)
+        return HTMLResponse(index_html)
 
     @app.get("/api/state")
     async def state() -> JSONResponse:
@@ -404,6 +427,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--data-root", default="/disk", help="Dataset root containing original DARPA scene folders.")
     ap.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to.")
     ap.add_argument("--port", type=int, default=8765, help="Port to bind the web server to.")
+    ap.add_argument(
+        "--review-mode",
+        choices=sorted(REVIEW_MODES),
+        default="label_quality",
+        help="Button labels and saved verdict vocabulary for the review task.",
+    )
     return ap.parse_args()
 
 
@@ -414,6 +443,7 @@ def main() -> None:
         results_root=Path(args.results_root),
         data_root=Path(args.data_root),
         scene_list_csv=Path(args.scene_list_csv) if args.scene_list_csv else None,
+        review_config=REVIEW_MODES[args.review_mode],
     )
     app = build_app(service)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

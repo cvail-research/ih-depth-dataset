@@ -17,7 +17,17 @@ QC_ROOT = ANALYSIS_ROOT / "qc_review"
 GOOD_VERDICT = "good"
 CAUTION_VERDICT = "usable with caution"
 BAD_VERDICT = "bad"
-VALID_VERDICTS = {GOOD_VERDICT, CAUTION_VERDICT, BAD_VERDICT}
+OCCLUSION_CLEAR_VERDICT = "occlusion clear"
+OCCLUSION_CLEANUP_VERDICT = "occlusion cleanup needed"
+OCCLUSION_REJECT_VERDICT = "reject due to occlusion"
+VALID_VERDICTS = {
+    GOOD_VERDICT,
+    CAUTION_VERDICT,
+    BAD_VERDICT,
+    OCCLUSION_CLEAR_VERDICT,
+    OCCLUSION_CLEANUP_VERDICT,
+    OCCLUSION_REJECT_VERDICT,
+}
 SHARED_REFERENCE_FILENAMES = (
     "ihdepth_qc_reference.png",
     "qc_reference.png",
@@ -455,11 +465,19 @@ class QCSceneService:
         results_root: Path = DEFAULT_RESULTS_ROOT,
         data_root: Path = Path("/disk"),
         scene_list_csv: Path | None = None,
+        review_config: dict[str, Any] | None = None,
     ):
         self.reviewer_id = reviewer_id
         self.results_root = results_root
         self.analysis_root = self.results_root.parent
         self.data_root = data_root
+        self.review_config = review_config or {
+            "page_title": "IH-Depth QC Review",
+            "button_1": {"label": "1 Good", "verdict": GOOD_VERDICT},
+            "button_2": {"label": "2 Usable with caution", "verdict": CAUTION_VERDICT},
+            "button_3": {"label": "3 Bad", "verdict": BAD_VERDICT},
+        }
+        self.page_title = str(self.review_config.get("page_title", "IH-Depth QC Review"))
         self.cache_root = QC_ROOT / "cache"
         self.session_dir = QC_ROOT / "sessions" / reviewer_id
         self.scenes = discover_qc_scenes(

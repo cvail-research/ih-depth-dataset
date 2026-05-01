@@ -1,0 +1,32 @@
+{
+  "annotation_status_counts": {
+    "annotated": 234,
+    "impossible_scene_no_verdict_recorded": 5,
+    "missing_session_json": 35,
+    "no_fit_ready": 31,
+    "skipped_lwhsi_artifacts": 1
+  },
+  "distance_agreement_job_7538_status": "cancelled_before_outputs",
+  "distance_agreement_status": "pending_recompute_after_completed_labels",
+  "fit_json_count": 274,
+  "fit_ready_count": 274,
+  "good_scene_timed_count_plausible": 109,
+  "good_scene_total_annotation_time_hours_plausible": 9.182610744166666,
+  "manifest": "manifests/quality/scene_quality_manifest_current.csv",
+  "mean_annotation_time_minutes_plausible": 5.463434746212121,
+  "mean_rmse_px": 13.547381974953819,
+  "median_annotation_time_minutes_plausible": 4.449786475,
+  "median_rmse_px": 3.3906537038545466,
+  "rmse_le_10px_count": 225,
+  "rmse_le_5px_count": 168,
+  "scene_count": 306,
+  "session_json_count": 255,
+  "timed_scene_count_plausible": 220,
+  "total_annotation_time_hours_plausible": 20.032594069444446,
+  "verdict_counts": {
+    "bad": 52,
+    "good": 118,
+    "missing_verdict": 69,
+    "usable with caution": 67
+  }
+}
