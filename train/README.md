@@ -69,6 +69,22 @@ sbatch scripts/train/baseline/submit_train_unidepthv2.sh \
   analysis/training/unidepthv2/first_run
 ```
 
+## DepthPro
+
+DepthPro uses the same manifest format and pseudo-broadband input encoding. Its
+trainer uses the differentiable `forward` path, then applies the same focal
+length scaling used by DepthPro inference before optimizing metric depth with
+SiLog loss.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/baseline/submit_train_depthpro.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/depthpro/first_run
+```
+
 ## HSI Depth Anything V2
 
 The HSI trainer keeps the full LWHSI cube and adapts the Depth Anything V2 patch
