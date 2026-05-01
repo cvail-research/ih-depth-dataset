@@ -13,13 +13,31 @@ fi
 
 cd "${DRAFT_DIR}"
 
+cleanup_latex_intermediates() {
+  rm -f \
+    main.aux \
+    main.bbl \
+    main.bcf \
+    main.blg \
+    main.fdb_latexmk \
+    main.fls \
+    main.log \
+    main.out \
+    main.run.xml \
+    main.synctex.gz \
+    main.xdv \
+    pdflatex*.fls
+}
+
 if command -v tectonic >/dev/null 2>&1; then
-  tectonic --keep-logs --keep-intermediates main.tex
+  tectonic main.tex
+  cleanup_latex_intermediates
   exit 0
 fi
 
 if command -v latexmk >/dev/null 2>&1; then
   latexmk -g -pdf -interaction=nonstopmode -halt-on-error main.tex
+  cleanup_latex_intermediates
   exit 0
 fi
 
@@ -28,6 +46,7 @@ if command -v pdflatex >/dev/null 2>&1 && command -v bibtex >/dev/null 2>&1; the
   bibtex main
   pdflatex -interaction=nonstopmode -halt-on-error main.tex
   pdflatex -interaction=nonstopmode -halt-on-error main.tex
+  cleanup_latex_intermediates
   exit 0
 fi
 
