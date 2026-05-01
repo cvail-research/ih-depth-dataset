@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
-import math
-import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -12,7 +9,19 @@ from typing import Any
 
 import numpy as np
 
-from ihd.evaluation.model_io import load_pseudobroadband_rgb, save_depth_visualization
+from ihd.evaluation.model_io import load_pseudobroadband_rgb
+from ihd.training.common import (
+    batch_metrics,
+    init_wandb,
+    load_depth_label,
+    mean_metric,
+    pad_depth_and_mask_items,
+    read_manifest,
+    save_prediction_preview,
+    scene_label,
+    seed_everything,
+    silog_loss,
+)
 
 
 MODEL_SLUG = "unik3d"
@@ -77,30 +86,6 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-def seed_everything(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    try:
-        import torch
-
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-    except Exception:
-        pass
-
-
-def read_manifest(path: str | Path) -> list[dict[str, str]]:
-    with Path(path).open(newline="") as f:
-        rows = list(csv.DictReader(f))
-    if not rows:
-        raise ValueError(f"Manifest is empty: {path}")
-    required = {"hdr_path", "label_path"}
-    missing = required - set(rows[0])
-    if missing:
-        raise ValueError(f"Manifest {path} is missing columns: {sorted(missing)}")
-    return rows
-
-
 class IHDepthDataset:
     def __init__(self, manifest: str | Path):
         self.rows = read_manifest(manifest)
@@ -113,19 +98,13 @@ class IHDepthDataset:
 
         row = self.rows[idx]
         rgb, _ = load_pseudobroadband_rgb(row["hdr_path"])
-        label_npz = np.load(row["label_path"])
-        depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
-        if "valid_mask" in label_npz:
-            mask = np.asarray(label_npz["valid_mask"], dtype=bool)
-        else:
-            mask = np.isfinite(depth) & (depth > 0.0)
-        mask = mask & np.isfinite(depth) & (depth > 0.0)
+        depth, mask = load_depth_label(row["label_path"])
 
         return {
             "rgb": torch.from_numpy(rgb).permute(2, 0, 1).float(),
             "depth_m": torch.from_numpy(depth),
             "valid_mask": torch.from_numpy(mask),
-            "scene": row.get("scene") or f"{row.get('collection', '')} / {row.get('path', '')} / {row.get('step', '')}",
+            "scene": scene_label(row),
             "hdr_path": row["hdr_path"],
             "label_path": row["label_path"],
         }
@@ -135,54 +114,20 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     import torch
     import torch.nn.functional as F
 
-    max_h = max(b["depth_m"].shape[0] for b in batch)
-    max_w = max(b["depth_m"].shape[1] for b in batch)
+    depths, masks, max_h, max_w = pad_depth_and_mask_items(batch)
     images = []
-    depths = []
-    masks = []
     for item in batch:
         h, w = item["depth_m"].shape
         pad = (0, max_w - w, 0, max_h - h)
         images.append(F.pad(item["rgb"], pad, value=0.0))
-        depths.append(F.pad(item["depth_m"], pad, value=0.0))
-        masks.append(F.pad(item["valid_mask"], pad, value=False))
 
     return {
         "rgb": torch.stack(images, dim=0),
-        "depth_m": torch.stack(depths, dim=0),
-        "valid_mask": torch.stack(masks, dim=0),
+        "depth_m": depths,
+        "valid_mask": masks,
         "scene": [b["scene"] for b in batch],
         "hdr_path": [b["hdr_path"] for b in batch],
         "label_path": [b["label_path"] for b in batch],
-    }
-
-
-def silog_loss(pred_m, target_m, valid_mask, *, min_depth_m: float, max_depth_m: float, lam: float):
-    import torch
-
-    pred = torch.clamp(pred_m, min=min_depth_m, max=max_depth_m)
-    target = torch.clamp(target_m, min=min_depth_m, max=max_depth_m)
-    mask = valid_mask & torch.isfinite(pred) & torch.isfinite(target) & (target > min_depth_m)
-    if not torch.any(mask):
-        return pred.sum() * 0.0
-    diff = torch.log(pred[mask]) - torch.log(target[mask])
-    return torch.sqrt(torch.clamp(torch.mean(diff * diff) - lam * torch.mean(diff) ** 2, min=0.0))
-
-
-def batch_metrics(pred_m, target_m, valid_mask, *, min_depth_m: float, max_depth_m: float) -> dict[str, float]:
-    import torch
-
-    pred = torch.clamp(pred_m.detach(), min=min_depth_m, max=max_depth_m)
-    target = torch.clamp(target_m.detach(), min=min_depth_m, max=max_depth_m)
-    mask = valid_mask & torch.isfinite(pred) & torch.isfinite(target) & (target > min_depth_m)
-    if not torch.any(mask):
-        return {"abs_rel": math.nan, "rmse_m": math.nan, "valid_pixels": 0.0}
-    p = pred[mask]
-    t = target[mask]
-    return {
-        "abs_rel": float(torch.mean(torch.abs(p - t) / t).cpu()),
-        "rmse_m": float(torch.sqrt(torch.mean((p - t) ** 2)).cpu()),
-        "valid_pixels": float(mask.sum().cpu()),
     }
 
 
@@ -239,28 +184,6 @@ def predict_depth(model, rgb, *, normalize: bool = True):
     return depth.squeeze(1)
 
 
-def mean_metric(rows: list[dict[str, float]], key: str) -> float:
-    vals = [row[key] for row in rows if math.isfinite(row[key])]
-    return float(np.mean(vals)) if vals else math.nan
-
-
-def init_wandb(config: TrainConfig):
-    if not config.wandb_project or config.wandb_mode == "disabled":
-        return None
-    try:
-        import wandb
-    except ImportError:
-        print("wandb is not installed; continuing without wandb.")
-        return None
-    return wandb.init(
-        entity=config.wandb_entity,
-        project=config.wandb_project,
-        name=config.wandb_run_name,
-        mode=config.wandb_mode,
-        config=asdict(config),
-    )
-
-
 def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
     import torch
 
@@ -277,16 +200,6 @@ def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, conf
         ckpt_dir / "training_state.pt",
     )
     return ckpt_dir
-
-
-def save_prediction_preview(out_dir: Path, step: int, pred_m, target_m, valid_mask) -> None:
-    preview_dir = out_dir / "previews" / f"step_{step:07d}"
-    preview_dir.mkdir(parents=True, exist_ok=True)
-    pred = pred_m[0].detach().cpu().numpy()
-    target = target_m[0].detach().cpu().numpy()
-    mask = valid_mask[0].detach().cpu().numpy().astype(bool)
-    save_depth_visualization(pred, preview_dir / "prediction.png")
-    save_depth_visualization(np.where(mask, target, np.nan), preview_dir / "target.png")
 
 
 def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None = None) -> dict[str, float]:
