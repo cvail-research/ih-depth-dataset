@@ -69,3 +69,24 @@ sbatch scripts/train/hsi/submit_train_depthanythingv2_hsi.sh \
   path/to/val_manifest.csv \
   analysis/training/depthanythingv2_hsi/first_run
 ```
+
+For one-scene overfit tests or very small manifests, preload normalized HSI
+tensors in memory:
+
+```bash
+sbatch scripts/train/hsi/submit_train_depthanythingv2_hsi.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/depthanythingv2_hsi/overfit_one_scene \
+  --cache-mode memory --preload-cache --num-workers 0
+```
+
+For repeated larger experiments, cache normalized HSI tensors on disk:
+
+```bash
+sbatch scripts/train/hsi/submit_train_depthanythingv2_hsi.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/depthanythingv2_hsi/full_run \
+  --cache-mode disk --cache-dir analysis/training/cache/hsi_tensors
+```

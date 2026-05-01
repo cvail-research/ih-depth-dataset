@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -41,6 +43,9 @@ class TrainConfig:
     device: str
     input_height: int
     normalization: str
+    cache_mode: str
+    cache_dir: str | None
+    preload_cache: bool
     epochs: int
     batch_size: int
     learning_rate: float
@@ -75,6 +80,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--input-height", type=int, default=518)
     ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
+    ap.add_argument("--cache-mode", default="none", choices=["none", "memory", "disk"])
+    ap.add_argument("--cache-dir", default=None, help="Directory for normalized HSI tensor cache when --cache-mode disk.")
+    ap.add_argument("--preload-cache", action="store_true", help="Load all HSI tensors once before training starts.")
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--learning-rate", type=float, default=1e-5)
@@ -97,18 +105,90 @@ def parse_args() -> argparse.Namespace:
 
 
 class IHDepthHSIDataset:
-    def __init__(self, manifest: str | Path, *, normalization: str):
+    def __init__(
+        self,
+        manifest: str | Path,
+        *,
+        normalization: str,
+        cache_mode: str = "none",
+        cache_dir: str | Path | None = None,
+        preload_cache: bool = False,
+    ):
         self.rows = read_manifest(manifest)
         self.normalization = normalization
+        self.cache_mode = cache_mode
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.memory_cache: dict[int, tuple[Any, dict[str, Any]]] = {}
+        if self.cache_mode == "disk" and self.cache_dir is None:
+            raise ValueError("--cache-dir is required when --cache-mode disk.")
+        if self.cache_mode == "disk" and self.cache_dir is not None:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        if preload_cache:
+            self.preload()
 
     def __len__(self) -> int:
         return len(self.rows)
+
+    def preload(self) -> None:
+        for idx in range(len(self.rows)):
+            self.load_hsi(idx)
+
+    def load_hsi(self, idx: int):
+        if self.cache_mode == "memory" and idx in self.memory_cache:
+            return self.memory_cache[idx]
+
+        row = self.rows[idx]
+        if self.cache_mode == "disk":
+            hsi, meta = self.load_hsi_from_disk_cache(row["hdr_path"])
+        else:
+            hsi, meta = load_hsi_tensor(row["hdr_path"], normalization=self.normalization)
+
+        if self.cache_mode == "memory":
+            self.memory_cache[idx] = (hsi, meta)
+        return hsi, meta
+
+    def load_hsi_from_disk_cache(self, hdr_path: str):
+        import torch
+
+        cache_path = self.hsi_cache_path(hdr_path)
+        if cache_path.exists():
+            item = torch.load(cache_path, map_location="cpu", weights_only=False)
+            return item["hsi"], item["meta"]
+
+        hsi, meta = load_hsi_tensor(hdr_path, normalization=self.normalization)
+        tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+        torch.save({"hsi": hsi, "meta": meta}, tmp_path)
+        tmp_path.replace(cache_path)
+        return hsi, meta
+
+    def hsi_cache_path(self, hdr_path: str) -> Path:
+        assert self.cache_dir is not None
+        return self.cache_dir / f"{self.hsi_cache_key(hdr_path)}.pt"
+
+    def hsi_cache_key(self, hdr_path: str) -> str:
+        path = Path(hdr_path)
+        parts = [str(path.resolve()), self.normalization]
+        for candidate in self.cache_dependency_paths(path):
+            if candidate.exists():
+                stat = candidate.stat()
+                parts.extend([str(candidate.resolve()), str(stat.st_size), str(stat.st_mtime_ns)])
+        return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def cache_dependency_paths(hdr_path: Path) -> list[Path]:
+        return [
+            hdr_path,
+            hdr_path.with_suffix(".bsq"),
+            hdr_path.with_suffix(".img"),
+            hdr_path.with_suffix(".raw"),
+            hdr_path.with_suffix(".dat"),
+        ]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         import torch
 
         row = self.rows[idx]
-        hsi, hsi_meta = load_hsi_tensor(row["hdr_path"], normalization=self.normalization)
+        hsi, hsi_meta = self.load_hsi(idx)
         depth, mask = load_depth_label(row["label_path"])
         return {
             "hsi": hsi,
@@ -119,12 +199,6 @@ class IHDepthHSIDataset:
             "label_path": row["label_path"],
             "num_hsi_channels": hsi_meta["num_hsi_channels"],
         }
-
-
-def infer_num_channels(manifest: str | Path, *, normalization: str) -> int:
-    row = read_manifest(manifest)[0]
-    hsi, _ = load_hsi_tensor(row["hdr_path"], normalization=normalization)
-    return int(hsi.shape[0])
 
 
 def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -242,6 +316,8 @@ def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None
 
 def main() -> None:
     args = parse_args()
+    if args.cache_mode == "disk" and args.cache_dir is None:
+        args.cache_dir = str(Path(args.out_dir) / "cache" / "hsi_tensors")
     config = TrainConfig(**vars(args))
     out_dir = Path(config.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -253,14 +329,27 @@ def main() -> None:
     from transformers import AutoModelForDepthEstimation
 
     device = torch.device(config.device if config.device == "cpu" or torch.cuda.is_available() else "cpu")
-    num_channels = infer_num_channels(config.train_manifest, normalization=config.normalization)
+    train_ds = IHDepthHSIDataset(
+        config.train_manifest,
+        normalization=config.normalization,
+        cache_mode=config.cache_mode,
+        cache_dir=config.cache_dir,
+        preload_cache=config.preload_cache,
+    )
+    val_ds = IHDepthHSIDataset(
+        config.val_manifest,
+        normalization=config.normalization,
+        cache_mode=config.cache_mode,
+        cache_dir=config.cache_dir,
+        preload_cache=config.preload_cache,
+    )
+    first_hsi, _ = train_ds.load_hsi(0)
+    num_channels = int(first_hsi.shape[0])
     model = AutoModelForDepthEstimation.from_pretrained(config.model_name)
     adapt_depthanythingv2_patch_embedding(model, num_channels)
     model = model.to(device)
     model.train()
 
-    train_ds = IHDepthHSIDataset(config.train_manifest, normalization=config.normalization)
-    val_ds = IHDepthHSIDataset(config.val_manifest, normalization=config.normalization)
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
@@ -268,6 +357,7 @@ def main() -> None:
         num_workers=config.num_workers,
         pin_memory=device.type == "cuda",
         collate_fn=collate_batch,
+        persistent_workers=config.num_workers > 0 and config.cache_mode == "memory",
     )
     val_loader = DataLoader(
         val_ds,
@@ -276,6 +366,7 @@ def main() -> None:
         num_workers=config.num_workers,
         pin_memory=device.type == "cuda",
         collate_fn=collate_batch,
+        persistent_workers=config.num_workers > 0 and config.cache_mode == "memory",
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     run = init_wandb(config)
@@ -284,7 +375,10 @@ def main() -> None:
         f"Training {config.model_name} with {num_channels} HSI channels on {len(train_ds)} scenes; "
         f"validating on {len(val_ds)} scenes."
     )
-    print(f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}")
+    print(
+        f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}; "
+        f"cache_mode={config.cache_mode}; preload_cache={config.preload_cache}"
+    )
 
     step = 0
     t0 = time.time()
