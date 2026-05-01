@@ -34,6 +34,11 @@ unidepthv2 = [
     "torchvision",
     "unidepth @ git+https://github.com/lpiccinelli-eth/UniDepth.git",
 ]
+depthanythingv2 = [
+    "torch",
+    "torchvision",
+    "transformers",
+]
 
 [tool.setuptools.packages.find]
 include = ["ihd*"]

@@ -5,6 +5,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
-exec "${PYTHON_BIN}" -m ihd.evaluation.predict_depthanythingv2 "$@"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  exec "${PYTHON_BIN}" -m ihd.evaluation.predict_depthanythingv2 "$@"
+fi
 
+exec uv run --extra depthanythingv2 python -m ihd.evaluation.predict_depthanythingv2 "$@"

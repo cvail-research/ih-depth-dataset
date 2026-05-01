@@ -44,8 +44,11 @@ case "${MODEL}" in
     fi
     ;;
   depthanythingv2)
-    PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON:-python}" \
+    if [[ -n "${DEPTHANYTHINGV2_PYTHON:-}" ]]; then
+      PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON}" scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+    else
       scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+    fi
     ;;
   depthpro)
     PYTHON_BIN="${DEPTHPRO_PYTHON:-python}" \
