@@ -1,6 +1,8 @@
 # Training
 
-This folder contains model training entry points for IH-Depth.
+This folder contains human-facing notes for IH-Depth training runs. Importable
+training code lives under `ihd/training`, and Slurm/local launchers live under
+`scripts/train`.
 
 ## Depth Anything V2
 
@@ -36,3 +38,18 @@ Outputs include:
 Weights & Biases logging is optional. The Slurm wrapper defaults to
 `WANDB_ENTITY=ai-uis` and `WANDB_PROJECT=ih-depth`; set `WANDB_MODE=disabled`
 or pass `--wandb-mode disabled` after the output directory to disable logging.
+
+## UniK3D
+
+UniK3D uses the same manifest format and pseudo-broadband input encoding. Its
+training script mirrors UniK3D inference preprocessing, calls the model decoder,
+and optimizes the predicted metric `depth` with SiLog loss.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/submit_train_unik3d.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/unik3d/first_run
+```
