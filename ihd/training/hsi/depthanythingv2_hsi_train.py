@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from ihd.hsi.depthanythingv2_hsi import (
+from ihd.inference.hsi.depthanythingv2_hsi import (
     adapt_depthanythingv2_patch_embedding,
     dino_compatible_size,
     load_hsi_tensor,
