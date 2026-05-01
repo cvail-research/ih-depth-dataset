@@ -1,0 +1,38 @@
+# Training
+
+This folder contains model training entry points for IH-Depth.
+
+## Depth Anything V2
+
+The first training target is Depth Anything V2 fine-tuned from pseudo-broadband
+LWHSI inputs to projected LiDAR depth labels.
+
+Expected input manifests are CSV files with at least:
+
+- `hdr_path`: ENVI LWHSI `.hdr` file.
+- `label_path`: projected LiDAR depth label `.npz` with `depth_m` and `valid_mask`.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/submit_train_depthanythingv2.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/depthanythingv2/first_run
+```
+
+The training script uses the same pseudo-broadband conversion as the evaluation
+baseline runners: sum all hyperspectral bands, min-max normalize, and replicate
+to RGB.
+
+Outputs include:
+
+- `config.json`
+- `final_metrics.json`
+- `checkpoints/step_*/`
+- `previews/step_*/prediction.png`
+- `previews/step_*/target.png`
+
+Weights & Biases logging is optional. The Slurm wrapper defaults to
+`WANDB_ENTITY=ai-uis` and `WANDB_PROJECT=ih-depth`; set `WANDB_MODE=disabled`
+or pass `--wandb-mode disabled` after the output directory to disable logging.
