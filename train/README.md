@@ -54,6 +54,21 @@ sbatch scripts/train/baseline/submit_train_unik3d.sh \
   analysis/training/unik3d/first_run
 ```
 
+## UniDepthV2
+
+UniDepthV2 uses the same manifest format and pseudo-broadband input encoding.
+Its trainer mirrors the UniDepthV2 inference preprocessing and optimizes the
+predicted metric depth with SiLog loss.
+
+Launch on Slurm from the repo root:
+
+```bash
+sbatch scripts/train/baseline/submit_train_unidepthv2.sh \
+  path/to/train_manifest.csv \
+  path/to/val_manifest.csv \
+  analysis/training/unidepthv2/first_run
+```
+
 ## HSI Depth Anything V2
 
 The HSI trainer keeps the full LWHSI cube and adapts the Depth Anything V2 patch
