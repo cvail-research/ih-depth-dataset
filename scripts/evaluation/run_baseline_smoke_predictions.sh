@@ -55,8 +55,11 @@ for MODEL in "${MODELS[@]}"; do
       fi
       ;;
     depthpro)
-      PYTHON_BIN="${DEPTHPRO_PYTHON:-python}" \
+      if [[ -n "${DEPTHPRO_PYTHON:-}" ]]; then
+        PYTHON_BIN="${DEPTHPRO_PYTHON}" scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      else
         scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      fi
       ;;
     *)
       echo "Unknown model: ${MODEL}" >&2
