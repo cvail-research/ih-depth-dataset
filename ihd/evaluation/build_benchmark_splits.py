@@ -111,6 +111,24 @@ def load_hardness_scores(path: Path, score_col: str, model_col: str, lower_is_ha
     return df
 
 
+def load_hardness_summary(path: Path, scene_col: str = "scene") -> pd.DataFrame:
+    df = pd.read_csv(path)
+    if scene_col not in df.columns:
+        raise KeyError(f"Hardness CSV {path} is missing scene column '{scene_col}'.")
+    required = {"hardness_mean", "hardness_std"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Hardness CSV {path} is missing required columns: {sorted(missing)}")
+    out = df.copy()
+    out["scene_id_for_split"] = out[scene_col].astype(str)
+    out["hardness_mean"] = pd.to_numeric(out["hardness_mean"], errors="coerce")
+    out["hardness_std"] = pd.to_numeric(out["hardness_std"], errors="coerce").fillna(0.0)
+    if "hardness_num_models" not in out.columns:
+        out["hardness_num_models"] = 0
+    out["hardness_ambiguous_for_review"] = False
+    return out
+
+
 def attach_hardness(
     manifest: pd.DataFrame,
     hardness_scores: pd.DataFrame | None,
@@ -122,7 +140,7 @@ def attach_hardness(
         scene["hardness_std"] = np.nan
         scene["hardness_num_models"] = 0
         scene["hardness_ambiguous_for_review"] = False
-    else:
+    elif "hardness_score" in hardness_scores.columns:
         grouped = hardness_scores.groupby("scene_id_for_split")["hardness_score"]
         scene = grouped.agg(
             hardness_mean="mean",
@@ -135,6 +153,13 @@ def attach_hardness(
             scene, on="scene_id_for_split", how="left"
         )
         scene["hardness_num_models"] = scene["hardness_num_models"].fillna(0).astype(int)
+    else:
+        scene = manifest[["scene_id_for_split", "split_group"]].drop_duplicates().merge(
+            hardness_scores[["scene_id_for_split", "hardness_mean", "hardness_std", "hardness_num_models"]],
+            on="scene_id_for_split",
+            how="left",
+        )
+        scene["hardness_ambiguous_for_review"] = scene["hardness_std"] >= ambiguity_std_threshold
 
     manifest = manifest.merge(scene, on=["scene_id_for_split", "split_group"], how="left")
     return manifest, scene.sort_values(["hardness_mean", "scene_id_for_split"], ascending=[False, True])
@@ -245,12 +270,17 @@ def main() -> None:
     manifest = load_manifest(Path(args.manifest), group_cols, args.accepted_only)
     hardness = None
     if args.hardness_csv:
-        hardness = load_hardness_scores(
-            Path(args.hardness_csv),
-            args.hardness_score_col,
-            args.hardness_model_col,
-            args.lower_is_harder,
-        )
+        hardness_path = Path(args.hardness_csv)
+        hardness_df = pd.read_csv(hardness_path)
+        if {"hardness_mean", "hardness_std"}.issubset(hardness_df.columns):
+            hardness = load_hardness_summary(hardness_path)
+        else:
+            hardness = load_hardness_scores(
+                hardness_path,
+                args.hardness_score_col,
+                args.hardness_model_col,
+                args.lower_is_harder,
+            )
     manifest, scene_hardness = attach_hardness(manifest, hardness, args.ambiguity_std_threshold)
     split_df = assign_splits(
         manifest,
@@ -267,4 +297,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
