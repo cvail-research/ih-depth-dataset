@@ -8,6 +8,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from ihd.evaluation.depth_metrics import DepthEvalConfig, depth_metrics_from_arrays
 
@@ -117,15 +118,18 @@ def finite_limits(arr: np.ndarray) -> tuple[float, float]:
     return lo, hi
 
 
-def main() -> None:
-    args = parse_args()
-    prediction_roots = [Path(path) for path in args.prediction_root]
-    if len(prediction_roots) != 4:
-        raise SystemExit("Provide exactly four --prediction-root values, one per model.")
-
+def load_scene_comparison(
+    scene: str,
+    prediction_roots: list[Path],
+    label_key: str,
+    mask_key: str,
+    prediction_key: str,
+    min_depth_m: float,
+    max_depth_m: float | None,
+) -> tuple[np.ndarray, np.ndarray | None, dict[str, np.ndarray], dict[str, dict[str, Any]], Path]:
     rows = {}
     for root in prediction_roots:
-        row = find_scene_row(root, args.scene)
+        row = find_scene_row(root, scene)
         rows[row["model"]] = row
 
     missing_models = [slug for slug, _ in MODEL_ORDER if slug not in rows]
@@ -136,29 +140,43 @@ def main() -> None:
     if not gt_path.exists():
         raise FileNotFoundError(gt_path)
 
-    gt = load_npz_array(gt_path, args.label_key)
-    gt_mask = load_mask(gt_path, args.mask_key)
+    gt = load_npz_array(gt_path, label_key)
+    gt_mask = load_mask(gt_path, mask_key)
     preds: dict[str, np.ndarray] = {}
     metrics: dict[str, dict[str, Any]] = {}
 
-    config = DepthEvalConfig(min_depth_m=args.min_depth_m, max_depth_m=args.max_depth_m)
+    config = DepthEvalConfig(min_depth_m=min_depth_m, max_depth_m=max_depth_m)
     for model_slug, model_title in MODEL_ORDER:
         row = rows[model_slug]
         pred_path = Path(row["prediction_path"])
-        pred = load_npz_array(pred_path, args.prediction_key)
+        pred = load_npz_array(pred_path, prediction_key)
         preds[model_title] = pred
         metrics[model_title] = depth_metrics_from_arrays(pred, gt, gt_mask, config)
 
+    return gt, gt_mask, preds, metrics, gt_path
+
+
+def render_scene_comparison(
+    scene: str,
+    gt: np.ndarray,
+    preds: dict[str, np.ndarray],
+    metrics: dict[str, dict[str, Any]],
+    output_dir: Path,
+) -> tuple[Path, Path]:
     vmin, vmax = finite_limits(gt)
-    fig = plt.figure(figsize=(14, 22), constrained_layout=True)
-    gs = fig.add_gridspec(nrows=5, ncols=2, width_ratios=[50, 3])
+    fig, axes = plt.subplots(5, 1, figsize=(14, 18))
+    fig.subplots_adjust(hspace=0.12)
 
     def render(row_idx: int, arr: np.ndarray, title: str, subtitle: str | None = None):
-        ax = fig.add_subplot(gs[row_idx, 0])
-        cax = fig.add_subplot(gs[row_idx, 1])
+        ax = axes[row_idx]
         im = ax.imshow(arr, cmap="viridis", vmin=vmin, vmax=vmax, interpolation="nearest")
-        ax.set_title(title + (f" | {subtitle}" if subtitle else ""), fontsize=13, pad=8)
+        # Match the axes box to the rendered image aspect so the colorbar height
+        # tracks the actual prediction panel instead of the whole subplot cell.
+        ax.set_box_aspect(arr.shape[0] / arr.shape[1])
+        ax.set_title(title + (f" | {subtitle}" if subtitle else ""), fontsize=13, pad=3)
         ax.axis("off")
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="3%", pad=0.08)
         cbar = fig.colorbar(im, cax=cax)
         cbar.set_label("Depth (m)")
         return im
@@ -167,7 +185,7 @@ def main() -> None:
         0,
         gt,
         "Ground Truth Depth",
-        f"{args.scene}",
+        f"{scene}",
     )
 
     for idx, (_, model_title) in enumerate(MODEL_ORDER, start=1):
@@ -179,23 +197,40 @@ def main() -> None:
             f"abs_rel={m.get('abs_rel', float('nan')):.3f}  rmse_m={m.get('rmse_m', float('nan')):.3f}",
         )
 
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    safe_scene = args.scene.replace(" / ", "__").replace("/", "_")
-    plot_path = out_dir / f"{safe_scene}_model_comparison.png"
-    summary_path = out_dir / f"{safe_scene}_model_comparison_metrics.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    safe_scene = scene.replace(" / ", "__").replace("/", "_")
+    plot_path = output_dir / f"{safe_scene}_model_comparison.png"
+    summary_path = output_dir / f"{safe_scene}_model_comparison_metrics.json"
 
     fig.savefig(plot_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     summary = {
-        "scene": args.scene,
-        "ground_truth_path": str(gt_path),
+        "scene": scene,
         "models": metrics,
         "score_mean_abs_rel": float(np.mean([metrics[title].get("abs_rel", np.nan) for _, title in MODEL_ORDER])),
         "score_std_abs_rel": float(np.std([metrics[title].get("abs_rel", np.nan) for _, title in MODEL_ORDER])),
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return plot_path, summary_path
+
+
+def main() -> None:
+    args = parse_args()
+    prediction_roots = [Path(path) for path in args.prediction_root]
+    if len(prediction_roots) != 4:
+        raise SystemExit("Provide exactly four --prediction-root values, one per model.")
+
+    gt, _, preds, metrics, _ = load_scene_comparison(
+        args.scene,
+        prediction_roots,
+        args.label_key,
+        args.mask_key,
+        args.prediction_key,
+        args.min_depth_m,
+        args.max_depth_m,
+    )
+    plot_path, summary_path = render_scene_comparison(args.scene, gt, preds, metrics, Path(args.output_dir))
     print(f"Saved plot to {plot_path}")
     print(f"Saved summary to {summary_path}")
 
