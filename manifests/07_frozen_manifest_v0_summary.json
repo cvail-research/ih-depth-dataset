@@ -7,13 +7,32 @@
     "previewed": 9
   },
   "defer_count": 203,
+  "depth_label_root": "analysis/depth_labels/platform_sphere_r4p0",
   "exclude_count": 52,
   "frozen_manifest_version": "v0",
   "good_and_candidate_count": 51,
   "good_count": 118,
   "include_count": 51,
+  "legacy_source_pool_counts": {
+    "with_prior_cyl": 60,
+    "without_prior_cyl": 246
+  },
+  "prediction_exclusion_reason_current_counts": {
+    "no_fit_ready_bad_scene": 2,
+    "no_fit_ready_missing_projected_depth_label": 29,
+    "prediction_ready": 274,
+    "skipped_lwhsi_artifacts": 1
+  },
+  "prediction_not_ready_current_count": 32,
+  "prediction_ready_current_count": 274,
   "quality_manifest": "manifests/05_scene_quality_manifest_current.csv",
   "quant_gate_pass_count": 51,
+  "registration_provenance_current_counts": {
+    "legacy_prior_pool_no_ours_fit": 16,
+    "ours_fit_ready": 274,
+    "ours_session_no_fit": 15,
+    "skipped_before_annotation_lwhsi_artifacts": 1
+  },
   "release_decision_counts": {
     "defer": 203,
     "exclude": 52,

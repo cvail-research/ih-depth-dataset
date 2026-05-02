@@ -34,6 +34,11 @@ def parse_args() -> argparse.Namespace:
         default="manifests/07_frozen_manifest_v0_summary.json",
         help="Summary JSON to write.",
     )
+    ap.add_argument(
+        "--depth-label-root",
+        default="analysis/depth_labels/platform_sphere_r4p0",
+        help="Depth-label root used to determine prediction readiness.",
+    )
     return ap.parse_args()
 
 
@@ -53,7 +58,45 @@ def cleanup_join_key(row: pd.Series) -> str:
     return scene_join_key(str(row["collection"]).strip(), path, f"{path}_step{step_num}")
 
 
-def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame) -> pd.DataFrame:
+def projected_depth_label_path(depth_label_root: Path, row: pd.Series) -> Path:
+    return depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
+
+
+def registration_provenance_current(row: pd.Series) -> str:
+    annotation_status = str(row.get("annotation_status", "")).strip().lower()
+    legacy_pool = str(row.get("source_pool", "")).strip().lower()
+    has_session_json = bool(row.get("has_session_json", False))
+    has_fit_json = bool(row.get("has_fit_json", False))
+    fit_ready = bool(row.get("fit_ready", False))
+
+    if annotation_status == "skipped_lwhsi_artifacts":
+        return "skipped_before_annotation_lwhsi_artifacts"
+    if fit_ready:
+        return "ours_fit_ready"
+    if has_fit_json:
+        return "ours_fit_not_ready"
+    if has_session_json:
+        return "ours_session_no_fit"
+    if legacy_pool == "with_prior_cyl":
+        return "legacy_prior_pool_no_ours_fit"
+    return "no_ours_fit_artifacts"
+
+
+def prediction_exclusion_reason_current(row: pd.Series) -> str | None:
+    if bool(row.get("prediction_ready_current", False)):
+        return None
+    annotation_status = str(row.get("annotation_status", "")).strip().lower()
+    verdict = str(row.get("verdict", "")).strip().lower()
+    if annotation_status == "skipped_lwhsi_artifacts":
+        return "skipped_lwhsi_artifacts"
+    if verdict == BAD_VERDICT:
+        return "no_fit_ready_bad_scene"
+    if not bool(row.get("fit_ready", False)):
+        return "no_fit_ready_missing_projected_depth_label"
+    return "missing_projected_depth_label"
+
+
+def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame, depth_label_root: Path) -> pd.DataFrame:
     quality = quality.copy()
     cleanup = cleanup.copy()
 
@@ -97,6 +140,17 @@ def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame) -> p
     merged["release_decision"] = merged.apply(determine_release_decision, axis=1)
     merged["release_reason"] = merged.apply(determine_release_reason, axis=1)
     merged["frozen_manifest_version"] = "v0"
+    merged["scene_manifest_scope"] = "all_306_scenes"
+    merged["release_registration_policy"] = "ours_only"
+    merged["legacy_source_pool"] = merged["source_pool"]
+    merged["legacy_prior_cyl_member"] = merged["legacy_source_pool"].astype(str).str.lower().eq("with_prior_cyl")
+    merged["registration_provenance_current"] = merged.apply(registration_provenance_current, axis=1)
+    merged["projected_depth_label_path_current"] = merged.apply(
+        lambda row: str(projected_depth_label_path(depth_label_root, row)),
+        axis=1,
+    )
+    merged["prediction_ready_current"] = merged["projected_depth_label_path_current"].map(lambda p: Path(p).exists())
+    merged["prediction_exclusion_reason_current"] = merged.apply(prediction_exclusion_reason_current, axis=1)
     merged["has_cleanup_review"] = merged["cleanup_status"] != "not_reviewed"
     merged["frozen_quant_gate_pass"] = (
         merged["verdict"].astype(str).str.lower().eq(GOOD_VERDICT)
@@ -105,14 +159,20 @@ def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame) -> p
 
     column_order = [
         "frozen_manifest_version",
+        "scene_manifest_scope",
         "collection",
         "path",
         "step",
         "scene",
-        "source_pool",
+        "release_registration_policy",
+        "registration_provenance_current",
+        "legacy_prior_cyl_member",
+        "legacy_source_pool",
         "release_decision",
         "release_reason",
         "frozen_quant_gate_pass",
+        "prediction_ready_current",
+        "prediction_exclusion_reason_current",
         "verdict",
         "annotation_status",
         "fit_ready",
@@ -162,6 +222,7 @@ def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame) -> p
         "updated_at",
         "fit_json",
         "session_json",
+        "projected_depth_label_path_current",
         "exclusion_reason",
         "timing_exclusion_reason",
         "qc_status",
@@ -225,16 +286,19 @@ def determine_release_reason(row: pd.Series) -> str | None:
     return None
 
 
-def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path) -> dict:
+def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path, depth_label_root: Path) -> dict:
     release_counts = df["release_decision"].value_counts(dropna=False).to_dict()
     cleanup_counts = df["cleanup_status"].value_counts(dropna=False).to_dict()
     return {
         "frozen_manifest_version": "v0",
         "quality_manifest": str(quality_path),
         "cleanup_manifest": str(cleanup_path),
+        "depth_label_root": str(depth_label_root),
         "scene_count": int(len(df)),
         "release_decision_counts": release_counts,
         "cleanup_status_counts": cleanup_counts,
+        "legacy_source_pool_counts": df["legacy_source_pool"].value_counts(dropna=False).to_dict(),
+        "registration_provenance_current_counts": df["registration_provenance_current"].value_counts(dropna=False).to_dict(),
         "include_count": int((df["release_decision"] == "include").sum()),
         "defer_count": int((df["release_decision"] == "defer").sum()),
         "exclude_count": int((df["release_decision"] == "exclude").sum()),
@@ -243,6 +307,9 @@ def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path) -> d
         "good_count": int((df["verdict"].astype(str).str.lower() == GOOD_VERDICT).sum()),
         "candidate_count": int(df["candidate_rmse5_distance5_current"].astype(bool).sum()),
         "good_and_candidate_count": int(((df["verdict"].astype(str).str.lower() == GOOD_VERDICT) & df["candidate_rmse5_distance5_current"].astype(bool)).sum()),
+        "prediction_ready_current_count": int(df["prediction_ready_current"].sum()),
+        "prediction_not_ready_current_count": int((~df["prediction_ready_current"]).sum()),
+        "prediction_exclusion_reason_current_counts": df["prediction_exclusion_reason_current"].fillna("prediction_ready").value_counts(dropna=False).to_dict(),
     }
 
 
@@ -252,11 +319,12 @@ def main() -> None:
     cleanup_path = Path(args.cleanup_manifest)
     output_csv = Path(args.output_csv)
     output_json = Path(args.output_summary_json)
+    depth_label_root = Path(args.depth_label_root)
 
     quality = load_csv(quality_path)
     cleanup = load_csv(cleanup_path)
-    frozen = merge_quality_and_cleanup(quality, cleanup)
-    summary = build_summary(frozen, quality_path, cleanup_path)
+    frozen = merge_quality_and_cleanup(quality, cleanup, depth_label_root)
+    summary = build_summary(frozen, quality_path, cleanup_path, depth_label_root)
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     frozen.to_csv(output_csv, index=False)
