@@ -46,6 +46,10 @@ INDEX_HTML = """<!doctype html>
     #cloud { width: 100%; height: 100%; min-height: 360px; border-radius: 8px; overflow: hidden; position: relative; }
     .mono { font-family: monospace; font-size: 12px; }
     .note { color: #9fb0b7; font-size: 12px; margin-top: 4px; }
+    .region-list { display: grid; gap: 8px; margin-top: 10px; max-height: 220px; overflow: auto; }
+    .region-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #11171d; border: 1px solid #23303a; border-radius: 8px; padding: 8px 10px; }
+    .region-row .meta { font-size: 12px; color: #cbd7de; }
+    .region-row button { padding: 6px 8px; font-size: 12px; }
     @media (max-width: 1100px) {
       body { overflow: auto; }
       .layout { height: auto; min-height: 100vh; grid-template-rows: auto auto; }
@@ -94,8 +98,10 @@ INDEX_HTML = """<!doctype html>
           <button class="primary" id="addRegionBtn">Add Region</button>
           <button id="recomputePreviewBtn">Preview All</button>
           <button id="undoRegionBtn">Undo Last</button>
-          <button id="computeFitBtn">Compute Fit</button>
+          <button id="computeFitBtn">Recompute Fit</button>
         </div>
+        <div class="note">Compute Fit is only needed if the scene does not have a fit yet or if you changed correspondences.</div>
+        <div class="region-list" id="regionList"></div>
         <div class="status" id="cleanupStatus">No cleanup preview yet.</div>
         <div class="note">The raw LiDAR scene is never modified in place. Cleanup outputs are written next to the scene as a derived preview.</div>
       </div>
@@ -123,6 +129,7 @@ INDEX_HTML = """<!doctype html>
     const pickStatus = document.getElementById('pickStatus');
     const candidatePointEl = document.getElementById('candidatePoint');
     const cleanupStatus = document.getElementById('cleanupStatus');
+    const regionList = document.getElementById('regionList');
     const referenceImage = document.getElementById('referenceImage');
     const rawOverlayImage = document.getElementById('rawOverlayImage');
     const cleanupOverlayImage = document.getElementById('cleanupOverlayImage');
@@ -306,8 +313,20 @@ INDEX_HTML = """<!doctype html>
           `Removed points: ${state.cleanup_preview.removed_points} | ` +
           `Kept points: ${state.cleanup_preview.kept_points} | ` +
           `Half extent: ${Number(state.cleanup_preview.half_extent_m).toFixed(2)} m`;
+        const regions = state.cleanup_preview.regions || [];
+        regionList.innerHTML = regions.length
+          ? regions.map((region, idx) => {
+              const center = (region.center_xyz || []).map((v) => Number(v).toFixed(3)).join(', ');
+              return `
+                <div class="region-row">
+                  <div class="meta">#${idx + 1} | ${region.selection_mode || 'unknown'} | r=${Number(region.half_extent_m).toFixed(2)} m | ${center}</div>
+                  <button data-region-delete="${idx}">Delete</button>
+                </div>`;
+            }).join('')
+          : '<div class="note">No cleanup regions yet.</div>';
       } else {
         cleanupStatus.textContent = 'No cleanup preview yet.';
+        regionList.innerHTML = '<div class="note">No cleanup regions yet.</div>';
       }
       if (state.fit && state.fit.ready) {
         fitStatus.textContent = `Fit RMSE: ${Number(state.fit.fit_rmse_total).toFixed(3)} px`;
@@ -452,6 +471,16 @@ INDEX_HTML = """<!doctype html>
       updateStatus();
     };
 
+    regionList.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-region-delete]');
+      if (!button) return;
+      const index = Number(button.getAttribute('data-region-delete'));
+      if (!Number.isInteger(index)) return;
+      state.cleanup_preview = await fetchJson(`/api/cleanup-region-delete/${index}`, {method: 'POST'});
+      state = await fetchJson('/api/scene');
+      updateStatus();
+    });
+
     loadScene().catch((err) => {
       console.error(err);
       sceneStatus.textContent = 'Failed to load scene: ' + err.message;
@@ -512,10 +541,7 @@ def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
     @app.post("/api/cleanup-preview")
     async def cleanup_preview() -> JSONResponse:
         try:
-            preview = workspace._load_cleanup_preview()
-            if preview is None:
-                raise ValueError("No cleanup regions exist yet. Add a region first.")
-            return JSONResponse(workspace._apply_cleanup_regions(preview.get("regions") or []))
+            return JSONResponse(workspace.recompute_cleanup_preview())
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -533,6 +559,13 @@ def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
         try:
             return JSONResponse(workspace.undo_cleanup_region())
         except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/cleanup-region-delete/{index}")
+    async def cleanup_region_delete(index: int) -> JSONResponse:
+        try:
+            return JSONResponse(workspace.remove_cleanup_region(index))
+        except (ValueError, FileNotFoundError, IndexError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/artifacts/{name}")

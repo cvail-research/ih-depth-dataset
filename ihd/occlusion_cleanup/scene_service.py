@@ -275,6 +275,12 @@ class OcclusionCleanupWorkspace:
     ) -> dict[str, Any]:
         return self.add_cleanup_region(center_xyz, half_extent_m, selection_mode)
 
+    def recompute_cleanup_preview(self) -> dict[str, Any]:
+        preview = self._load_cleanup_preview()
+        if preview is None:
+            raise ValueError("No cleanup regions exist yet. Add a region first.")
+        return self._write_cleanup_preview(self._apply_cleanup_regions(preview.get("regions") or []))
+
     def _current_regions(self) -> list[dict[str, Any]]:
         preview = self._load_cleanup_preview()
         if preview is None:
@@ -389,6 +395,29 @@ class OcclusionCleanupWorkspace:
         if not regions:
             raise ValueError("No cleanup region to undo.")
         regions.pop()
+        if not regions:
+            self.clear_cleanup_preview()
+            return {
+                "scene_key": self.scene_key,
+                "cleanup_region_count": 0,
+                "regions": [],
+                "selection_mode_summary": {},
+                "source_projection_las": str(self.projection_las) if self.projection_las else None,
+                "cleaned_las": None,
+                "raw_overlay": None,
+                "cleanup_overlay": None,
+                "removed_points": 0,
+                "kept_points": 0,
+                "fit_rmse_total_px": float(self.get_fit_status().get("fit_rmse_total", np.nan)),
+                "updated_at": _now(),
+            }
+        return self._apply_cleanup_regions(regions)
+
+    def remove_cleanup_region(self, index: int) -> dict[str, Any]:
+        regions = self._current_regions()
+        if index < 0 or index >= len(regions):
+            raise IndexError(f"No cleanup region at index {index}.")
+        regions.pop(index)
         if not regions:
             self.clear_cleanup_preview()
             return {

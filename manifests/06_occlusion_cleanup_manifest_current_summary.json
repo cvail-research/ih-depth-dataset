@@ -3,13 +3,14 @@
     "previewed": 2
   },
   "manifest_path": "/home/guille/ih-depth-dataset/manifests/06_occlusion_cleanup_manifest_current.csv",
-  "mean_kept_points": 618710.5,
-  "mean_removed_points": 5795.0,
+  "mean_kept_points": 616652.5,
+  "mean_removed_points": 7853.0,
   "scene_count": 2,
   "selection_mode_counts": {
-    "overlay": 2
+    "lidar": 1,
+    "overlay": 1
   },
-  "total_kept_points": 1237421,
-  "total_removed_points": 11590,
-  "updated_at": "2026-05-02T15:44:38Z"
+  "total_kept_points": 1233305,
+  "total_removed_points": 15706,
+  "updated_at": "2026-05-02T15:51:16Z"
 }
