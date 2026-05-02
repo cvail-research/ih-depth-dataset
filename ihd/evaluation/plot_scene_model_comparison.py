@@ -106,6 +106,17 @@ def color_limits(arrays: list[np.ndarray]) -> tuple[float, float]:
     return lo, hi
 
 
+def finite_limits(arr: np.ndarray) -> tuple[float, float]:
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 0.0, 1.0
+    lo = float(np.min(finite))
+    hi = float(np.max(finite))
+    if hi <= lo:
+        hi = lo + 1.0
+    return lo, hi
+
+
 def main() -> None:
     args = parse_args()
     prediction_roots = [Path(path) for path in args.prediction_root]
@@ -138,17 +149,22 @@ def main() -> None:
         preds[model_title] = pred
         metrics[model_title] = depth_metrics_from_arrays(pred, gt, gt_mask, config)
 
-    vmin, vmax = color_limits([gt, *preds.values()])
-    fig, axes = plt.subplots(5, 1, figsize=(14, 18), constrained_layout=True)
+    vmin, vmax = finite_limits(gt)
+    fig = plt.figure(figsize=(14, 22), constrained_layout=True)
+    gs = fig.add_gridspec(nrows=5, ncols=2, width_ratios=[50, 3])
 
-    def render(ax, arr, title, subtitle=None):
+    def render(row_idx: int, arr: np.ndarray, title: str, subtitle: str | None = None):
+        ax = fig.add_subplot(gs[row_idx, 0])
+        cax = fig.add_subplot(gs[row_idx, 1])
         im = ax.imshow(arr, cmap="viridis", vmin=vmin, vmax=vmax, interpolation="nearest")
         ax.set_title(title + (f" | {subtitle}" if subtitle else ""), fontsize=13, pad=8)
         ax.axis("off")
+        cbar = fig.colorbar(im, cax=cax)
+        cbar.set_label("Depth (m)")
         return im
 
     render(
-        axes[0],
+        0,
         gt,
         "Ground Truth Depth",
         f"{args.scene}",
@@ -157,14 +173,11 @@ def main() -> None:
     for idx, (_, model_title) in enumerate(MODEL_ORDER, start=1):
         m = metrics[model_title]
         render(
-            axes[idx],
+            idx,
             preds[model_title],
             model_title,
             f"abs_rel={m.get('abs_rel', float('nan')):.3f}  rmse_m={m.get('rmse_m', float('nan')):.3f}",
         )
-
-    cbar = fig.colorbar(axes[0].images[0], ax=axes, shrink=0.92, pad=0.01)
-    cbar.set_label("Depth (m)")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
