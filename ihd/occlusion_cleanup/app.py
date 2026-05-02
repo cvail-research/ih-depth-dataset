@@ -91,7 +91,9 @@ INDEX_HTML = """<!doctype html>
           <input id="halfExtentInput" type="number" min="0.1" step="0.1" value="1.0">
         </div>
         <div class="controls" style="margin-top: 8px;">
-          <button class="primary" id="previewCleanupBtn">Preview Cleanup</button>
+          <button class="primary" id="addRegionBtn">Add Region</button>
+          <button id="recomputePreviewBtn">Preview All</button>
+          <button id="undoRegionBtn">Undo Last</button>
           <button id="computeFitBtn">Compute Fit</button>
         </div>
         <div class="status" id="cleanupStatus">No cleanup preview yet.</div>
@@ -295,7 +297,12 @@ INDEX_HTML = """<!doctype html>
         : 'Ctrl+click a LiDAR point to center a cleanup box.');
       candidatePointEl.textContent = candidatePoint ? `Selected center: ${formatVec(candidatePoint)}` : 'Selected center: none';
       if (state.cleanup_preview) {
+        const regionCount = state.cleanup_preview.cleanup_region_count ?? state.cleanup_preview.regions?.length ?? 0;
+        const modeSummary = state.cleanup_preview.selection_mode_summary
+          ? Object.entries(state.cleanup_preview.selection_mode_summary).map(([k, v]) => `${k}:${v}`).join(', ')
+          : '';
         cleanupStatus.textContent =
+          `Regions: ${regionCount}${modeSummary ? ` | Modes: ${modeSummary}` : ''} | ` +
           `Removed points: ${state.cleanup_preview.removed_points} | ` +
           `Kept points: ${state.cleanup_preview.kept_points} | ` +
           `Half extent: ${Number(state.cleanup_preview.half_extent_m).toFixed(2)} m`;
@@ -414,7 +421,7 @@ INDEX_HTML = """<!doctype html>
       updateStatus();
     };
 
-    document.getElementById('previewCleanupBtn').onclick = async () => {
+    document.getElementById('addRegionBtn').onclick = async () => {
       if (!candidatePoint) {
         alert('Pick a LiDAR point first.');
         return;
@@ -424,11 +431,24 @@ INDEX_HTML = """<!doctype html>
         alert('Enter a positive half extent in meters.');
         return;
       }
-      state.cleanup_preview = await fetchJson('/api/cleanup-preview', {
+      state.cleanup_preview = await fetchJson('/api/cleanup-region-add', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({center_xyz: candidatePoint, half_extent_m: halfExtent, selection_mode: candidateSource}),
       });
+      state = await fetchJson('/api/scene');
+      updateStatus();
+    };
+
+    document.getElementById('recomputePreviewBtn').onclick = async () => {
+      state.cleanup_preview = await fetchJson('/api/cleanup-preview', {method: 'POST'});
+      state = await fetchJson('/api/scene');
+      updateStatus();
+    };
+
+    document.getElementById('undoRegionBtn').onclick = async () => {
+      state.cleanup_preview = await fetchJson('/api/cleanup-region-undo', {method: 'POST'});
+      state = await fetchJson('/api/scene');
       updateStatus();
     };
 
@@ -442,7 +462,7 @@ INDEX_HTML = """<!doctype html>
 """
 
 
-class CleanupPreviewPayload(BaseModel):
+class CleanupRegionPayload(BaseModel):
     center_xyz: list[float]
     half_extent_m: float = 1.0
     selection_mode: str = "unknown"
@@ -490,11 +510,28 @@ def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
         return JSONResponse(workspace.compute_fit())
 
     @app.post("/api/cleanup-preview")
-    async def cleanup_preview(payload: CleanupPreviewPayload) -> JSONResponse:
+    async def cleanup_preview() -> JSONResponse:
+        try:
+            preview = workspace._load_cleanup_preview()
+            if preview is None:
+                raise ValueError("No cleanup regions exist yet. Add a region first.")
+            return JSONResponse(workspace._apply_cleanup_regions(preview.get("regions") or []))
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/cleanup-region-add")
+    async def cleanup_region_add(payload: CleanupRegionPayload) -> JSONResponse:
         try:
             return JSONResponse(
-                workspace.preview_cleanup(payload.center_xyz, payload.half_extent_m, payload.selection_mode)
+                workspace.add_cleanup_region(payload.center_xyz, payload.half_extent_m, payload.selection_mode)
             )
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/cleanup-region-undo")
+    async def cleanup_region_undo() -> JSONResponse:
+        try:
+            return JSONResponse(workspace.undo_cleanup_region())
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

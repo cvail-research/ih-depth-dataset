@@ -136,21 +136,60 @@ class OcclusionCleanupWorkspace:
     def _load_cleanup_preview(self) -> dict[str, Any] | None:
         if not self.cleanup_preview_json_path.exists():
             return None
-        return json.loads(self.cleanup_preview_json_path.read_text())
+        preview = json.loads(self.cleanup_preview_json_path.read_text())
+        return self._normalize_cleanup_preview(preview)
+
+    @staticmethod
+    def _normalize_cleanup_preview(preview: dict[str, Any]) -> dict[str, Any]:
+        if "regions" in preview:
+            regions = preview.get("regions") or []
+            normalized = dict(preview)
+            normalized["regions"] = regions
+            normalized["cleanup_region_count"] = int(preview.get("cleanup_region_count", len(regions)))
+            return normalized
+
+        if "center_xyz" not in preview:
+            normalized = dict(preview)
+            normalized["regions"] = []
+            normalized["cleanup_region_count"] = 0
+            return normalized
+
+        region = {
+            "center_xyz": [float(v) for v in preview.get("center_xyz", [0.0, 0.0, 0.0])],
+            "half_extent_m": float(preview.get("half_extent_m", 1.0)),
+            "selection_mode": preview.get("selection_mode", "unknown"),
+            "updated_at": preview.get("updated_at", _now()),
+        }
+        normalized = dict(preview)
+        normalized["regions"] = [region]
+        normalized["cleanup_region_count"] = 1
+        normalized["selection_mode_summary"] = {region["selection_mode"]: 1}
+        return normalized
 
     def _cleanup_manifest_row(self, preview: dict[str, Any]) -> dict[str, Any]:
+        regions = preview.get("regions") or []
+        selection_mode_summary = preview.get("selection_mode_summary")
+        if selection_mode_summary is None:
+            selection_mode_summary = {}
+            for region in regions:
+                mode = str(region.get("selection_mode", "unknown"))
+                selection_mode_summary[mode] = int(selection_mode_summary.get(mode, 0)) + 1
+        last_region = regions[-1] if regions else {}
         return {
             "collection": self.collection,
             "path_key": self.path_key,
             "path_name": self.path_name,
             "step": int(self.step),
             "scene_key": self.scene_key,
-            "selection_mode": preview.get("selection_mode", "unknown"),
+            "selection_mode": last_region.get("selection_mode", preview.get("selection_mode", "unknown")),
             "cleanup_status": "previewed",
-            "center_x_m": float(preview["center_xyz"][0]),
-            "center_y_m": float(preview["center_xyz"][1]),
-            "center_z_m": float(preview["center_xyz"][2]),
-            "half_extent_m": float(preview["half_extent_m"]),
+            "cleanup_region_count": int(preview.get("cleanup_region_count", len(regions))),
+            "cleanup_regions_json": json.dumps(regions, sort_keys=True),
+            "selection_mode_summary_json": json.dumps(selection_mode_summary, sort_keys=True),
+            "center_x_m": float(last_region.get("center_xyz", preview.get("center_xyz", [0.0, 0.0, 0.0]))[0]),
+            "center_y_m": float(last_region.get("center_xyz", preview.get("center_xyz", [0.0, 0.0, 0.0]))[1]),
+            "center_z_m": float(last_region.get("center_xyz", preview.get("center_xyz", [0.0, 0.0, 0.0]))[2]),
+            "half_extent_m": float(last_region.get("half_extent_m", preview.get("half_extent_m", 1.0))),
             "removed_points": int(preview["removed_points"]),
             "kept_points": int(preview["kept_points"]),
             "fit_rmse_total_px": float(preview["fit_rmse_total_px"]),
@@ -161,20 +200,9 @@ class OcclusionCleanupWorkspace:
             "updated_at": preview["updated_at"],
         }
 
-    def sync_cleanup_manifest(self) -> None:
-        preview = self._load_cleanup_preview()
-        if preview is None:
-            return
-        row = self._cleanup_manifest_row(preview)
-        OCCLUSION_CLEANUP_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
-        rows = []
-        if OCCLUSION_CLEANUP_MANIFEST.exists():
-            with OCCLUSION_CLEANUP_MANIFEST.open("r", newline="") as f:
-                reader = csv.DictReader(f)
-                rows = [dict(r) for r in reader if dict(r).get("scene_key") != self.scene_key]
-        rows.append(row)
-        rows.sort(key=lambda r: (r["collection"], r["path_key"], int(r["step"])))
-        fieldnames = [
+    @staticmethod
+    def _cleanup_manifest_fieldnames() -> list[str]:
+        return [
             "collection",
             "path_key",
             "path_name",
@@ -182,6 +210,9 @@ class OcclusionCleanupWorkspace:
             "scene_key",
             "selection_mode",
             "cleanup_status",
+            "cleanup_region_count",
+            "cleanup_regions_json",
+            "selection_mode_summary_json",
             "center_x_m",
             "center_y_m",
             "center_z_m",
@@ -195,6 +226,11 @@ class OcclusionCleanupWorkspace:
             "cleanup_overlay",
             "updated_at",
         ]
+
+    def _rewrite_cleanup_manifest(self, rows: list[dict[str, Any]]) -> None:
+        OCCLUSION_CLEANUP_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+        rows.sort(key=lambda r: (r["collection"], r["path_key"], int(r["step"])))
+        fieldnames = self._cleanup_manifest_fieldnames()
         with OCCLUSION_CLEANUP_MANIFEST.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -210,13 +246,26 @@ class OcclusionCleanupWorkspace:
                 status: sum(1 for r in rows if r.get("cleanup_status") == status)
                 for status in sorted({r.get("cleanup_status") for r in rows})
             },
-            "total_removed_points": int(sum(int(r["removed_points"]) for r in rows)),
-            "total_kept_points": int(sum(int(r["kept_points"]) for r in rows)),
+            "total_removed_points": int(sum(int(r["removed_points"]) for r in rows)) if rows else 0,
+            "total_kept_points": int(sum(int(r["kept_points"]) for r in rows)) if rows else 0,
             "mean_removed_points": float(np.mean([int(r["removed_points"]) for r in rows])) if rows else 0.0,
             "mean_kept_points": float(np.mean([int(r["kept_points"]) for r in rows])) if rows else 0.0,
             "updated_at": _now(),
         }
         OCCLUSION_CLEANUP_SUMMARY.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+
+    def sync_cleanup_manifest(self) -> None:
+        preview = self._load_cleanup_preview()
+        if preview is None:
+            return
+        row = self._cleanup_manifest_row(preview)
+        rows = []
+        if OCCLUSION_CLEANUP_MANIFEST.exists():
+            with OCCLUSION_CLEANUP_MANIFEST.open("r", newline="") as f:
+                reader = csv.DictReader(f)
+                rows = [dict(r) for r in reader if dict(r).get("scene_key") != self.scene_key]
+        rows.append(row)
+        self._rewrite_cleanup_manifest(rows)
 
     def preview_cleanup(
         self,
@@ -224,23 +273,54 @@ class OcclusionCleanupWorkspace:
         half_extent_m: float = 1.0,
         selection_mode: str = "unknown",
     ) -> dict[str, Any]:
-        if len(center_xyz) != 3:
-            raise ValueError("Cleanup preview center must contain exactly three coordinates.")
-        if half_extent_m <= 0:
-            raise ValueError("Cleanup preview half extent must be positive.")
+        return self.add_cleanup_region(center_xyz, half_extent_m, selection_mode)
+
+    def _current_regions(self) -> list[dict[str, Any]]:
+        preview = self._load_cleanup_preview()
+        if preview is None:
+            return []
+        return list(preview.get("regions") or [])
+
+    def _write_cleanup_preview(self, preview: dict[str, Any]) -> dict[str, Any]:
+        self.cleanup_preview_json_path.write_text(json.dumps(preview, indent=2, sort_keys=True) + "\n")
+        self.sync_cleanup_manifest()
+        return preview
+
+    def _apply_cleanup_regions(self, regions: list[dict[str, Any]]) -> dict[str, Any]:
         fit_state = self.get_fit_status()
         if not fit_state.get("ready"):
             raise ValueError("Cleanup preview requires an existing fitted overlay.")
         if self.projection_las is None:
             raise FileNotFoundError("Preprocessed LAS is not available for this scene.")
 
-        center = np.asarray(center_xyz, dtype=np.float64)
         las = laspy.read(self.projection_las)
         xyz = np.column_stack((las.x, las.y, las.z)).astype(np.float64)
         if xyz.size == 0:
             raise ValueError("Cleanup preview cannot run on an empty cloud.")
 
-        removed_mask = np.all(np.abs(xyz - center.reshape(1, 3)) <= float(half_extent_m), axis=1)
+        if not regions:
+            raise ValueError("Cleanup preview requires at least one cleanup region.")
+
+        normalized_regions: list[dict[str, Any]] = []
+        removed_mask = np.zeros(xyz.shape[0], dtype=bool)
+        for region in regions:
+            center_xyz = region.get("center_xyz")
+            if center_xyz is None or len(center_xyz) != 3:
+                raise ValueError("Cleanup region center must contain exactly three coordinates.")
+            half_extent = float(region.get("half_extent_m", 0.0))
+            if half_extent <= 0:
+                raise ValueError("Cleanup region half extent must be positive.")
+            center = np.asarray(center_xyz, dtype=np.float64)
+            removed_mask |= np.all(np.abs(xyz - center.reshape(1, 3)) <= half_extent, axis=1)
+            normalized_regions.append(
+                {
+                    "center_xyz": [float(v) for v in center.tolist()],
+                    "half_extent_m": float(half_extent),
+                    "selection_mode": str(region.get("selection_mode", "unknown")),
+                    "updated_at": str(region.get("updated_at", _now())),
+                }
+            )
+
         keep_idx = np.flatnonzero(~removed_mask)
         if keep_idx.size == 0:
             raise ValueError("Cleanup preview would remove all points; widen the box or choose a different center.")
@@ -258,11 +338,20 @@ class OcclusionCleanupWorkspace:
             f"{self.path_name.split('_DistStA')[0]} Step{self.step} | cleanup overlay",
         )
 
+        selection_mode_summary: dict[str, int] = {}
+        for region in normalized_regions:
+            mode = region["selection_mode"]
+            selection_mode_summary[mode] = selection_mode_summary.get(mode, 0) + 1
+        last_region = normalized_regions[-1]
+
         preview = {
             "scene_key": self.scene_key,
-            "selection_mode": selection_mode,
-            "center_xyz": [float(v) for v in center.tolist()],
-            "half_extent_m": float(half_extent_m),
+            "selection_mode": last_region["selection_mode"],
+            "center_xyz": list(last_region["center_xyz"]),
+            "half_extent_m": float(last_region["half_extent_m"]),
+            "cleanup_region_count": len(normalized_regions),
+            "regions": normalized_regions,
+            "selection_mode_summary": selection_mode_summary,
             "source_projection_las": str(self.projection_las),
             "cleaned_las": str(self.cleanup_clean_las_path),
             "raw_overlay": str(self.cleanup_raw_overlay_path),
@@ -272,9 +361,63 @@ class OcclusionCleanupWorkspace:
             "fit_rmse_total_px": float(fit_state.get("fit_rmse_total", np.nan)),
             "updated_at": _now(),
         }
-        self.cleanup_preview_json_path.write_text(json.dumps(preview, indent=2, sort_keys=True) + "\n")
-        self.sync_cleanup_manifest()
-        return preview
+        return self._write_cleanup_preview(preview)
+
+    def add_cleanup_region(
+        self,
+        center_xyz: list[float],
+        half_extent_m: float = 1.0,
+        selection_mode: str = "unknown",
+    ) -> dict[str, Any]:
+        if len(center_xyz) != 3:
+            raise ValueError("Cleanup region center must contain exactly three coordinates.")
+        if half_extent_m <= 0:
+            raise ValueError("Cleanup region half extent must be positive.")
+        regions = self._current_regions()
+        regions.append(
+            {
+                "center_xyz": [float(v) for v in center_xyz],
+                "half_extent_m": float(half_extent_m),
+                "selection_mode": selection_mode,
+                "updated_at": _now(),
+            }
+        )
+        return self._apply_cleanup_regions(regions)
+
+    def undo_cleanup_region(self) -> dict[str, Any]:
+        regions = self._current_regions()
+        if not regions:
+            raise ValueError("No cleanup region to undo.")
+        regions.pop()
+        if not regions:
+            self.clear_cleanup_preview()
+            return {
+                "scene_key": self.scene_key,
+                "cleanup_region_count": 0,
+                "regions": [],
+                "selection_mode_summary": {},
+                "source_projection_las": str(self.projection_las) if self.projection_las else None,
+                "cleaned_las": None,
+                "raw_overlay": None,
+                "cleanup_overlay": None,
+                "removed_points": 0,
+                "kept_points": 0,
+                "fit_rmse_total_px": float(self.get_fit_status().get("fit_rmse_total", np.nan)),
+                "updated_at": _now(),
+            }
+        return self._apply_cleanup_regions(regions)
+
+    def clear_cleanup_preview(self) -> None:
+        if self.cleanup_preview_json_path.exists():
+            self.cleanup_preview_json_path.unlink()
+        for path in [self.cleanup_raw_overlay_path, self.cleanup_overlay_path, self.cleanup_clean_las_path]:
+            if path.exists():
+                path.unlink()
+        if OCCLUSION_CLEANUP_MANIFEST.exists():
+            with OCCLUSION_CLEANUP_MANIFEST.open("r", newline="") as f:
+                reader = csv.DictReader(f)
+                rows = [dict(r) for r in reader if dict(r).get("scene_key") != self.scene_key]
+            self._rewrite_cleanup_manifest(rows)
 
     def _render_overlay_for_las(self, las_path: Path, out_path: Path, title: str) -> None:
         gray = load_gray_preview(self.hdr_path).astype(np.float64) / 255.0
