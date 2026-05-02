@@ -8,7 +8,7 @@ import numpy as np
 
 from ihd.annotation_workspace.scene_service import REPO_ROOT, _now, load_gray_preview
 from ihd.annotation_workspace_nocyl.scene_service import NoCylSceneWorkspace
-from ihd.datasets.cylindrical_camera import project_vect_safe, read_cam
+from ihd.datasets.cylindrical_camera import camera, project_vect_safe, read_cam
 from ihd.datasets.depth_rasterization import depth_range, rasterize
 from ihd.datasets.preprocess_las_for_projection import write_subset_las
 from ihd.annotation_workspace.scene_service import save_overlay
@@ -44,6 +44,7 @@ class OcclusionCleanupWorkspace:
         self.cleanup_clean_las_path = self.workspace_dir / f"{self.scene_key}_cleanup_projection_clean.las"
 
         self._lock = threading.Lock()
+        self._pointcloud_payload: dict[str, Any] | None = None
 
     @property
     def hdr_path(self) -> Path:
@@ -79,7 +80,47 @@ class OcclusionCleanupWorkspace:
         return self.source.get_session()
 
     def get_pointcloud_payload(self) -> dict[str, Any]:
-        return self.source.get_pointcloud_payload()
+        payload = self.source.get_pointcloud_payload()
+        current_source = payload.get("source_las")
+        if self._pointcloud_payload is not None and self._pointcloud_payload.get("source_las") != current_source:
+            self._pointcloud_payload = None
+        if self._pointcloud_payload is None:
+            projected_payload = dict(payload)
+            fit_state = self.get_fit_status()
+            if fit_state.get("ready"):
+                cam_info = fit_state.get("optimized_camera") or fit_state.get("default_camera") or {}
+                try:
+                    cam = camera(
+                        float(cam_info["R"]),
+                        float(cam_info["w"]),
+                        float(cam_info["y"]),
+                        float(cam_info["f"]),
+                        float(cam_info["j0"]),
+                        np.asarray(cam_info["Rot"], dtype=np.float64),
+                        np.asarray(cam_info["t"], dtype=np.float64),
+                    )
+                    xyz = np.column_stack((payload["x"], payload["y"], payload["z"])).astype(np.float64)
+                    projected = project_vect_safe(xyz, cam)
+                    depth = depth_range((cam.Rot @ xyz.T).T + cam.t.reshape(1, 3))
+                    valid = np.isfinite(projected[:, 0]) & np.isfinite(projected[:, 1]) & np.isfinite(depth)
+                    projected_payload["projected_u"] = projected[:, 0].tolist()
+                    projected_payload["projected_v"] = projected[:, 1].tolist()
+                    projected_payload["projected_depth"] = depth.tolist()
+                    projected_payload["projected_valid"] = valid.tolist()
+                    projected_payload["projection_image_width"] = int(cam_info.get("image_width", 0) or 0)
+                    projected_payload["projection_image_height"] = int(cam_info.get("image_height", 0) or 0)
+                except Exception:
+                    projected_payload["projected_u"] = []
+                    projected_payload["projected_v"] = []
+                    projected_payload["projected_depth"] = []
+                    projected_payload["projected_valid"] = []
+            else:
+                projected_payload["projected_u"] = []
+                projected_payload["projected_v"] = []
+                projected_payload["projected_depth"] = []
+                projected_payload["projected_valid"] = []
+            self._pointcloud_payload = projected_payload
+        return self._pointcloud_payload
 
     def get_fit_status(self) -> dict[str, Any]:
         return self.source.get_fit_status()

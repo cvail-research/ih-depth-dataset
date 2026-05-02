@@ -139,6 +139,7 @@ INDEX_HTML = """<!doctype html>
     let maxPickScreenDistancePx = 18;
     let pointerDownAt = null;
     let statusFlash = '';
+    let overlayPickRadiusPx = 14;
 
     function buildPointGeometry(xs, ys, zs) {
       const geometry = new THREE.BufferGeometry();
@@ -230,6 +231,41 @@ INDEX_HTML = """<!doctype html>
       };
     }
 
+    function findNearestOverlayPoint(event) {
+      if (!state || !state.fit || !state.fit.ready || !pointcloud || !pointcloud.projected_u || !pointcloud.projected_u.length) {
+        return null;
+      }
+      const img = event.currentTarget;
+      const rect = img.getBoundingClientRect();
+      const naturalWidth = state.fit.default_camera?.image_width || img.naturalWidth || rect.width;
+      const naturalHeight = state.fit.default_camera?.image_height || img.naturalHeight || rect.height;
+      const clickX = (event.clientX - rect.left) * (naturalWidth / rect.width);
+      const clickY = (event.clientY - rect.top) * (naturalHeight / rect.height);
+      let bestIdx = -1;
+      let bestDist2 = overlayPickRadiusPx * overlayPickRadiusPx;
+      let bestDepth = Infinity;
+      for (let i = 0; i < pointcloud.projected_u.length; i += 1) {
+        if (pointcloud.projected_valid && !pointcloud.projected_valid[i]) continue;
+        const u = pointcloud.projected_u[i];
+        const v = pointcloud.projected_v[i];
+        if (!Number.isFinite(u) || !Number.isFinite(v)) continue;
+        const dx = u - clickX;
+        const dy = v - clickY;
+        const dist2 = dx * dx + dy * dy;
+        const depth = Number(pointcloud.projected_depth[i]);
+        if (dist2 < bestDist2 || (Math.abs(dist2 - bestDist2) <= 1e-6 && depth < bestDepth)) {
+          bestDist2 = dist2;
+          bestDepth = depth;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx < 0) return null;
+      return {
+        distancePx: Math.sqrt(bestDist2),
+        point: [pointcloud.x[bestIdx], pointcloud.y[bestIdx], pointcloud.z[bestIdx]],
+      };
+    }
+
     function setRotationCenterFromEvent(event) {
       if (!cloudPoints) return;
       const hit = findNearestScreenPoint(event, maxPickScreenDistancePx);
@@ -277,6 +313,18 @@ INDEX_HTML = """<!doctype html>
       if (state.cleanup_preview) {
         cleanupOverlayImage.src = `/api/artifacts/cleanup_overlay.png?ts=${encodeURIComponent(state.cleanup_preview.updated_at || Date.now())}`;
       }
+    }
+
+    async function setCandidateFromOverlay(event) {
+      const hit = findNearestOverlayPoint(event);
+      if (!hit) {
+        statusFlash = 'no projected point close enough to the overlay click';
+        updateStatus();
+        return;
+      }
+      candidatePoint = hit.point;
+      statusFlash = `overlay point selected (${hit.distancePx.toFixed(1)} px)`;
+      updateStatus();
     }
 
     function renderPointCloud() {
@@ -328,6 +376,12 @@ INDEX_HTML = """<!doctype html>
         statusFlash = `candidate selected (${hit.distancePx.toFixed(1)} px)`;
         updateStatus();
       });
+      rawOverlayImage.addEventListener('click', async (event) => {
+        await setCandidateFromOverlay(event);
+      });
+      cleanupOverlayImage.addEventListener('click', async (event) => {
+        await setCandidateFromOverlay(event);
+      });
       window.addEventListener('resize', onCloudResize);
       onCloudResize();
       animateCloud();
@@ -341,6 +395,8 @@ INDEX_HTML = """<!doctype html>
       if (state.cleanup_preview) {
         cleanupOverlayImage.hidden = false;
         cleanupOverlayImage.src = `/api/artifacts/cleanup_overlay.png?ts=${encodeURIComponent(state.cleanup_preview.updated_at || Date.now())}`;
+      } else {
+        cleanupOverlayImage.hidden = true;
       }
       pointcloud = await fetchJson('/api/pointcloud');
       renderPointCloud();
@@ -350,6 +406,8 @@ INDEX_HTML = """<!doctype html>
     document.getElementById('computeFitBtn').onclick = async () => {
       state.fit = await fetchJson('/api/fit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
       state = await fetchJson('/api/scene');
+      pointcloud = await fetchJson('/api/pointcloud');
+      renderPointCloud();
       updateStatus();
     };
 
