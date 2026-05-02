@@ -1,18 +1,8 @@
 {
-  "candidate_count": 74,
-  "cleanup_manifest": "manifests/06_occlusion_cleanup_manifest_current.csv",
-  "cleanup_reviewed_count": 9,
-  "cleanup_status_counts": {
-    "not_reviewed": 297,
-    "previewed": 9
-  },
-  "defer_count": 203,
-  "depth_label_root": "analysis/depth_labels/platform_sphere_r4p0",
+  "defer_count": 204,
   "exclude_count": 52,
   "frozen_manifest_version": "v0",
-  "good_and_candidate_count": 51,
-  "good_count": 118,
-  "include_count": 51,
+  "include_count": 50,
   "legacy_source_pool_counts": {
     "with_prior_cyl": 60,
     "without_prior_cyl": 246
@@ -25,8 +15,6 @@
   },
   "prediction_not_ready_current_count": 32,
   "prediction_ready_current_count": 274,
-  "quality_manifest": "manifests/05_scene_quality_manifest_current.csv",
-  "quant_gate_pass_count": 51,
   "registration_provenance_current_counts": {
     "legacy_prior_pool_no_ours_fit": 16,
     "ours_fit_ready": 274,
@@ -34,9 +22,9 @@
     "skipped_before_annotation_lwhsi_artifacts": 1
   },
   "release_decision_counts": {
-    "defer": 203,
+    "defer": 204,
     "exclude": 52,
-    "include": 51
+    "include": 50
   },
   "scene_count": 306
 }

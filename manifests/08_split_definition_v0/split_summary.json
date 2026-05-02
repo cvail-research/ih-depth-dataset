@@ -1,0 +1,20 @@
+{
+  "ambiguous_hardness_scenes": 8,
+  "collections": [
+    "IHTest_202009_DistStA",
+    "IHTest_202104_DistStA",
+    "IHTest_202108_DistStA",
+    "IHTest_202204_DistStA-20221110"
+  ],
+  "hardness_available_scenes": 50,
+  "num_groups": 21,
+  "num_scenes": 50,
+  "split_group_counts": {
+    "test": 5,
+    "train": 16
+  },
+  "split_scene_counts": {
+    "test": 8,
+    "train": 42
+  }
+}
