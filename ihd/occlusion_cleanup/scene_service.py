@@ -17,9 +17,18 @@ from ihd.annotation_workspace.scene_service import save_overlay
 WORKSPACE_ROOT_CLEANUP = REPO_ROOT / "analysis" / "occlusion_cleanup_workspace"
 
 
+def _normalize_path_name(path_name: str) -> str:
+    if path_name.startswith("Path") and path_name.endswith("_DistStA"):
+        return path_name
+    if path_name.startswith("path") and path_name[4:].isdigit():
+        return f"Path{path_name[4:]}_DistStA"
+    return path_name
+
+
 class OcclusionCleanupWorkspace:
     def __init__(self, collection: str, path_name: str, step: int | str):
-        self.source = NoCylSceneWorkspace(collection, path_name, step)
+        normalized_path_name = _normalize_path_name(path_name)
+        self.source = NoCylSceneWorkspace(collection, normalized_path_name, step)
         self.collection = self.source.collection
         self.path_name = self.source.path_name
         self.step = self.source.step
