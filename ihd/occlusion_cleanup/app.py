@@ -139,6 +139,7 @@ INDEX_HTML = """<!doctype html>
     let maxPickScreenDistancePx = 18;
     let pointerDownAt = null;
     let statusFlash = '';
+    let candidateSource = 'unknown';
     let overlayPickRadiusPx = 14;
 
     function buildPointGeometry(xs, ys, zs) {
@@ -323,6 +324,7 @@ INDEX_HTML = """<!doctype html>
         return;
       }
       candidatePoint = hit.point;
+      candidateSource = 'overlay';
       statusFlash = `overlay point selected (${hit.distancePx.toFixed(1)} px)`;
       updateStatus();
     }
@@ -373,6 +375,7 @@ INDEX_HTML = """<!doctype html>
         const hit = findNearestScreenPoint(event, maxPickScreenDistancePx);
         if (!hit) return;
         candidatePoint = hit.point;
+        candidateSource = 'lidar';
         statusFlash = `candidate selected (${hit.distancePx.toFixed(1)} px)`;
         updateStatus();
       });
@@ -424,7 +427,7 @@ INDEX_HTML = """<!doctype html>
       state.cleanup_preview = await fetchJson('/api/cleanup-preview', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({center_xyz: candidatePoint, half_extent_m: halfExtent}),
+        body: JSON.stringify({center_xyz: candidatePoint, half_extent_m: halfExtent, selection_mode: candidateSource}),
       });
       updateStatus();
     };
@@ -442,6 +445,7 @@ INDEX_HTML = """<!doctype html>
 class CleanupPreviewPayload(BaseModel):
     center_xyz: list[float]
     half_extent_m: float = 1.0
+    selection_mode: str = "unknown"
 
 
 def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
@@ -488,7 +492,9 @@ def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
     @app.post("/api/cleanup-preview")
     async def cleanup_preview(payload: CleanupPreviewPayload) -> JSONResponse:
         try:
-            return JSONResponse(workspace.preview_cleanup(payload.center_xyz, payload.half_extent_m))
+            return JSONResponse(
+                workspace.preview_cleanup(payload.center_xyz, payload.half_extent_m, payload.selection_mode)
+            )
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -1,3 +1,4 @@
+import csv
 import json
 import threading
 from pathlib import Path
@@ -15,6 +16,8 @@ from ihd.annotation_workspace.scene_service import save_overlay
 
 
 WORKSPACE_ROOT_CLEANUP = REPO_ROOT / "analysis" / "occlusion_cleanup_workspace"
+OCCLUSION_CLEANUP_MANIFEST = REPO_ROOT / "manifests" / "06_occlusion_cleanup_manifest_current.csv"
+OCCLUSION_CLEANUP_SUMMARY = REPO_ROOT / "manifests" / "06_occlusion_cleanup_manifest_current_summary.json"
 
 
 def _normalize_path_name(path_name: str) -> str:
@@ -68,6 +71,8 @@ class OcclusionCleanupWorkspace:
 
     def prepare(self) -> None:
         self.source.prepare()
+        if self.cleanup_preview_json_path.exists():
+            self.sync_cleanup_manifest()
 
     def get_scene_payload(self) -> dict[str, Any]:
         scene = self.source.get_scene_payload()
@@ -133,7 +138,92 @@ class OcclusionCleanupWorkspace:
             return None
         return json.loads(self.cleanup_preview_json_path.read_text())
 
-    def preview_cleanup(self, center_xyz: list[float], half_extent_m: float = 1.0) -> dict[str, Any]:
+    def _cleanup_manifest_row(self, preview: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "collection": self.collection,
+            "path_key": self.path_key,
+            "path_name": self.path_name,
+            "step": int(self.step),
+            "scene_key": self.scene_key,
+            "selection_mode": preview.get("selection_mode", "unknown"),
+            "cleanup_status": "previewed",
+            "center_x_m": float(preview["center_xyz"][0]),
+            "center_y_m": float(preview["center_xyz"][1]),
+            "center_z_m": float(preview["center_xyz"][2]),
+            "half_extent_m": float(preview["half_extent_m"]),
+            "removed_points": int(preview["removed_points"]),
+            "kept_points": int(preview["kept_points"]),
+            "fit_rmse_total_px": float(preview["fit_rmse_total_px"]),
+            "source_projection_las": preview["source_projection_las"],
+            "cleaned_las": preview["cleaned_las"],
+            "raw_overlay": preview["raw_overlay"],
+            "cleanup_overlay": preview["cleanup_overlay"],
+            "updated_at": preview["updated_at"],
+        }
+
+    def sync_cleanup_manifest(self) -> None:
+        preview = self._load_cleanup_preview()
+        if preview is None:
+            return
+        row = self._cleanup_manifest_row(preview)
+        OCCLUSION_CLEANUP_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+        rows = []
+        if OCCLUSION_CLEANUP_MANIFEST.exists():
+            with OCCLUSION_CLEANUP_MANIFEST.open("r", newline="") as f:
+                reader = csv.DictReader(f)
+                rows = [dict(r) for r in reader if dict(r).get("scene_key") != self.scene_key]
+        rows.append(row)
+        rows.sort(key=lambda r: (r["collection"], r["path_key"], int(r["step"])))
+        fieldnames = [
+            "collection",
+            "path_key",
+            "path_name",
+            "step",
+            "scene_key",
+            "selection_mode",
+            "cleanup_status",
+            "center_x_m",
+            "center_y_m",
+            "center_z_m",
+            "half_extent_m",
+            "removed_points",
+            "kept_points",
+            "fit_rmse_total_px",
+            "source_projection_las",
+            "cleaned_las",
+            "raw_overlay",
+            "cleanup_overlay",
+            "updated_at",
+        ]
+        with OCCLUSION_CLEANUP_MANIFEST.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        summary = {
+            "manifest_path": str(OCCLUSION_CLEANUP_MANIFEST),
+            "scene_count": len(rows),
+            "selection_mode_counts": {
+                mode: sum(1 for r in rows if r.get("selection_mode") == mode)
+                for mode in sorted({r.get("selection_mode") for r in rows})
+            },
+            "cleanup_status_counts": {
+                status: sum(1 for r in rows if r.get("cleanup_status") == status)
+                for status in sorted({r.get("cleanup_status") for r in rows})
+            },
+            "total_removed_points": int(sum(int(r["removed_points"]) for r in rows)),
+            "total_kept_points": int(sum(int(r["kept_points"]) for r in rows)),
+            "mean_removed_points": float(np.mean([int(r["removed_points"]) for r in rows])) if rows else 0.0,
+            "mean_kept_points": float(np.mean([int(r["kept_points"]) for r in rows])) if rows else 0.0,
+            "updated_at": _now(),
+        }
+        OCCLUSION_CLEANUP_SUMMARY.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+
+    def preview_cleanup(
+        self,
+        center_xyz: list[float],
+        half_extent_m: float = 1.0,
+        selection_mode: str = "unknown",
+    ) -> dict[str, Any]:
         if len(center_xyz) != 3:
             raise ValueError("Cleanup preview center must contain exactly three coordinates.")
         if half_extent_m <= 0:
@@ -170,6 +260,7 @@ class OcclusionCleanupWorkspace:
 
         preview = {
             "scene_key": self.scene_key,
+            "selection_mode": selection_mode,
             "center_xyz": [float(v) for v in center.tolist()],
             "half_extent_m": float(half_extent_m),
             "source_projection_las": str(self.projection_las),
@@ -182,6 +273,7 @@ class OcclusionCleanupWorkspace:
             "updated_at": _now(),
         }
         self.cleanup_preview_json_path.write_text(json.dumps(preview, indent=2, sort_keys=True) + "\n")
+        self.sync_cleanup_manifest()
         return preview
 
     def _render_overlay_for_las(self, las_path: Path, out_path: Path, title: str) -> None:

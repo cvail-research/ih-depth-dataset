@@ -1,0 +1,15 @@
+{
+  "cleanup_status_counts": {
+    "previewed": 1
+  },
+  "manifest_path": "/home/guille/ih-depth-dataset/manifests/06_occlusion_cleanup_manifest_current.csv",
+  "mean_kept_points": 671745.0,
+  "mean_removed_points": 612.0,
+  "scene_count": 1,
+  "selection_mode_counts": {
+    "overlay": 1
+  },
+  "total_kept_points": 671745,
+  "total_removed_points": 612,
+  "updated_at": "2026-05-02T15:27:19Z"
+}
