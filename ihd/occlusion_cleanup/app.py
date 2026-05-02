@@ -136,8 +136,9 @@ INDEX_HTML = """<!doctype html>
     let cloudControls = null;
     let cloudPoints = null;
     let pointPositions = null;
-    let pointPickThreshold = 0.12;
+    let maxPickScreenDistancePx = 18;
     let pointerDownAt = null;
+    let statusFlash = '';
 
     function buildPointGeometry(xs, ys, zs) {
       const geometry = new THREE.BufferGeometry();
@@ -177,7 +178,6 @@ INDEX_HTML = """<!doctype html>
       const bbox = geometry.boundingBox;
       const size = new THREE.Vector3();
       bbox.getSize(size);
-      pointPickThreshold = Math.max(size.length() * 0.0009, 0.02);
       return new THREE.Points(
         geometry,
         new THREE.PointsMaterial({ size: 2.0, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.92 }),
@@ -224,7 +224,28 @@ INDEX_HTML = """<!doctype html>
         }
       }
       if (bestIdx < 0) return null;
-      return { point: [pointPositions[3 * bestIdx], pointPositions[3 * bestIdx + 1], pointPositions[3 * bestIdx + 2]] };
+      return {
+        distancePx: Math.sqrt(bestDist2),
+        point: [pointPositions[3 * bestIdx], pointPositions[3 * bestIdx + 1], pointPositions[3 * bestIdx + 2]],
+      };
+    }
+
+    function setRotationCenterFromEvent(event) {
+      if (!cloudPoints) return;
+      const hit = findNearestScreenPoint(event, maxPickScreenDistancePx);
+      if (!hit) {
+        statusFlash = 'no point found to use as rotation center';
+        updateStatus();
+        return;
+      }
+      const center = new THREE.Vector3(hit.point[0], hit.point[1], hit.point[2]);
+      const offset = new THREE.Vector3().subVectors(cloudCamera.position, cloudControls.target);
+      cloudControls.target.copy(center);
+      cloudCamera.position.copy(center.clone().add(offset));
+      cloudCamera.updateProjectionMatrix();
+      statusFlash = `rotation center moved (${hit.distancePx.toFixed(1)} px)`;
+      cloudControls.update();
+      updateStatus();
     }
 
     function updateStatus() {
@@ -232,9 +253,9 @@ INDEX_HTML = """<!doctype html>
       cloudStatus.textContent = pointcloud
         ? `Cloud: ${pointcloud.display_source} | points rendered: ${pointcloud.point_count} / ${pointcloud.original_point_count}`
         : 'Points rendered: ...';
-      pickStatus.textContent = candidatePoint
+      pickStatus.textContent = statusFlash || (candidatePoint
         ? `Selected center: ${formatVec(candidatePoint)}`
-        : 'Ctrl+click a LiDAR point to center a cleanup box.';
+        : 'Ctrl+click a LiDAR point to center a cleanup box.');
       candidatePointEl.textContent = candidatePoint ? `Selected center: ${formatVec(candidatePoint)}` : 'Selected center: none';
       if (state.cleanup_preview) {
         cleanupStatus.textContent =
@@ -296,10 +317,15 @@ INDEX_HTML = """<!doctype html>
         const dy = event.clientY - pointerDownAt.y;
         pointerDownAt = null;
         if ((dx * dx + dy * dy) > 16) return;
+        if (event.shiftKey) {
+          setRotationCenterFromEvent(event);
+          return;
+        }
         if (!event.ctrlKey) return;
-        const hit = findNearestScreenPoint(event, 18);
+        const hit = findNearestScreenPoint(event, maxPickScreenDistancePx);
         if (!hit) return;
         candidatePoint = hit.point;
+        statusFlash = `candidate selected (${hit.distancePx.toFixed(1)} px)`;
         updateStatus();
       });
       window.addEventListener('resize', onCloudResize);
