@@ -73,6 +73,99 @@ This dataset is derived from DARPA Invisible Headlights scenes and includes only
     path.write_text(text)
 
 
+def infer_croissant_type(series: pd.Series) -> str:
+    if pd.api.types.is_bool_dtype(series):
+        return "sc:Boolean"
+    if pd.api.types.is_integer_dtype(series):
+        return "sc:Integer"
+    if pd.api.types.is_float_dtype(series):
+        return "sc:Float"
+    return "sc:Text"
+
+
+def write_croissant(path: Path, df: pd.DataFrame, repo_id: str) -> None:
+    file_object_id = "frozen-manifest-csv"
+    record_set_id = "frozen-manifest"
+    columns = [
+        "collection",
+        "path",
+        "step",
+        "scene",
+        "release_decision",
+        "release_reason",
+        "verdict",
+        "annotation_status",
+        "fit_rmse_total_px",
+        "distance_max_error_percent_of_picked_range",
+        "distance_all_points_pass_le_5pct",
+        "candidate_rmse5_distance5_current",
+        "cleanup_status",
+        "cleanup_region_count",
+        "removed_points",
+        "kept_points",
+    ]
+    field_nodes = []
+    for col in columns:
+        if col not in df.columns:
+            continue
+        field_nodes.append(
+            {
+                "@type": "cr:Field",
+                "@id": f"{record_set_id}/{col}",
+                "name": col,
+                "dataType": infer_croissant_type(df[col]),
+                "source": {
+                    "fileObject": {"@id": file_object_id},
+                    "extract": {"column": col},
+                },
+            }
+        )
+
+    croissant = {
+        "@context": {
+            "@language": "en",
+            "@vocab": "https://schema.org/",
+            "cr": "http://mlcommons.org/croissant/",
+            "sc": "https://schema.org/",
+            "dct": "http://purl.org/dc/terms/",
+            "data": {"@id": "cr:data", "@type": "@json"},
+            "distribution": "sc:distribution",
+        },
+        "@type": "sc:Dataset",
+        "@id": repo_id,
+        "name": "IH-Depth",
+        "description": (
+            "Curated LWIR-LiDAR dataset expansion for supervised thermal depth "
+            "estimation on DARPA Invisible Headlights scenes."
+        ),
+        "url": f"https://huggingface.co/datasets/{repo_id}",
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": file_object_id,
+                "name": "07_frozen_manifest_v0.csv",
+                "contentUrl": "07_frozen_manifest_v0.csv",
+                "encodingFormat": "text/csv",
+            }
+        ],
+        "recordSet": [
+            {
+                "@type": "cr:RecordSet",
+                "@id": record_set_id,
+                "name": "frozen_manifest",
+                "description": "Frozen IH-Depth v0 release manifest.",
+                "key": [
+                    {"@id": f"{record_set_id}/collection"},
+                    {"@id": f"{record_set_id}/path"},
+                    {"@id": f"{record_set_id}/step"},
+                ],
+                "field": field_nodes,
+            }
+        ],
+    }
+    path.write_text(json.dumps(croissant, indent=2, sort_keys=True) + "\n")
+
+
 def main() -> None:
     args = parse_args()
     frozen_path = Path(args.frozen_manifest)
@@ -96,6 +189,10 @@ def main() -> None:
     if legacy_hf_manifest.exists():
         legacy_hf_manifest.unlink()
     shutil.copyfile(frozen_path, output_dir / "07_frozen_manifest_v0.csv")
+    legacy_croissant = output_dir / "croissant_v0.jsonld"
+    if legacy_croissant.exists():
+        legacy_croissant.unlink()
+    write_croissant(output_dir / "croissant_v0.json", df, args.repo_id)
 
     (output_dir / "release_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     write_readme(output_dir / "README.md", summary, args.repo_id)
