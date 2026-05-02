@@ -6,11 +6,6 @@ IHTest_202009_DistStA,path,Path5_DistStA,-0.520216,0.453179,70.280891,4.0,0.03,5
 IHTest_202009_DistStA,path,Path6_DistStA,64.623429,43.077994,78.090022,4.0,0.03,50,2.0,manual
 IHTest_202009_DistStA,path,Path7_DistStA,36.018930,73.066425,86.279922,4.0,0.03,50,2.0,manual
 IHTest_202009_DistStA,path,Path8_DistStA,48.39033,-10.942251,101.885519,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path1_DistStA,-0.437581,-0.012369,-0.188484,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path10_DistStA,-1.982201,-0.061204,-1.635220,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path11_DistStA,-1.123922,-0.035369,-0.914767,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path15_DistStA,-1.071007,-0.021492,-0.913944,4.0,0.03,50,2.0,manual
-IHTest_202104_DistStA,path,Path19_DistStA,-1.134040,-0.038043,-0.922689,4.0,0.03,50,2.0,manual
 IHTest_202104_DistStA,collection,,-1.1497502,-0.0336954,-0.9150208,4.0,0.03,50,2.0,mean_of_manual_path_centers
 IHTest_202108_DistStA,collection,,-0.109999,-0.001428,-0.155019,4.0,0.03,50,2.0,manual
 IHTest_202204_DistStA-20221110,collection,,-0.109999,-0.001428,-0.155019,4.0,0.03,50,2.0,manual
