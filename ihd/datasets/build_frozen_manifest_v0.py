@@ -58,6 +58,12 @@ def cleanup_join_key(row: pd.Series) -> str:
     return scene_join_key(str(row["collection"]).strip(), path, f"{path}_step{step_num}")
 
 
+def normalized_text(value: Any) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
 def projected_depth_label_path(depth_label_root: Path, row: pd.Series) -> Path:
     return depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
 
@@ -262,6 +268,8 @@ def determine_release_decision(row: pd.Series) -> str:
         return "exclude"
     if not bool(row.get("candidate_rmse5_distance5_current", False)):
         return "defer"
+    if normalized_text(row.get("exclusion_reason", "")):
+        return "defer"
     if str(row.get("cleanup_status", "")).strip().lower() == "rejected":
         return "exclude"
     return "include"
@@ -281,6 +289,9 @@ def determine_release_reason(row: pd.Series) -> str | None:
         return "missing distance agreement"
     if not bool(row.get("candidate_rmse5_distance5_current", False)):
         return "does not meet frozen rmse5+distance5 gate"
+    exclusion_reason = normalized_text(row.get("exclusion_reason", ""))
+    if exclusion_reason:
+        return f"manual qc exclusion: {exclusion_reason}"
     if str(row.get("cleanup_status", "")).strip().lower() == "rejected":
         return "occlusion cleanup rejected"
     return None
