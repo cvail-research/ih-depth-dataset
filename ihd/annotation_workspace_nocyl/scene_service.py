@@ -29,7 +29,6 @@ from ihd.annotation_workspace.scene_service import (
 from ihd.datasets.calibration_lidar_cylindrical import calibrate_single, read_corresp, write_cyl
 from ihd.datasets.cylindrical_camera import camera, project_vect_safe, read_cam
 from ihd.datasets.depth_rasterization import depth_range, rasterize
-from ihd.datasets.preprocess_las_for_projection import write_subset_las
 
 WORKSPACE_ROOT_NO_CYL = REPO_ROOT / "analysis" / "annotation_workspace_nocyl"
 MIN_NO_CYL_FIT_POINTS = 8
@@ -90,10 +89,6 @@ class NoCylSceneWorkspace:
         self.fitted_cyl_path = self.workspace_dir / "fitted.cyl"
         self.overlay_preview_path = self.workspace_dir / "overlay_preview.png"
         self.reprojection_preview_path = self.workspace_dir / "reprojection_preview.png"
-        self.cleanup_preview_dir = self.workspace_dir / "occlusion_cleanup_preview"
-        self.cleanup_preview_json_path = self.workspace_dir / "occlusion_cleanup_preview.json"
-        self.cleanup_preview_las_path = self.cleanup_preview_dir / f"{self.scene_key}_occlusion_cleanup_clean.las"
-        self.cleanup_preview_overlay_path = self.cleanup_preview_dir / "cleanup_overlay_preview.png"
 
         self._lock = threading.Lock()
         self._pointcloud_payload: dict[str, Any] | None = None
@@ -217,10 +212,6 @@ class NoCylSceneWorkspace:
             "picked_count": picked_count,
             "missing_count": len(picks) - picked_count,
         }
-        if self.cleanup_preview_json_path.exists():
-            scene["cleanup_preview"] = self._read_json(self.cleanup_preview_json_path)
-        else:
-            scene["cleanup_preview"] = None
         return scene
 
     def get_picks(self) -> dict[str, Any]:
@@ -462,81 +453,6 @@ class NoCylSceneWorkspace:
                 "intensity_norm": intensity_norm.tolist(),
             }
         return self._pointcloud_payload
-
-    def preview_occlusion_cleanup(self, center_xyz: list[float], half_extent_m: float = 1.0) -> dict[str, Any]:
-        if self.projection_las is None:
-            raise FileNotFoundError("Preprocessing is not ready yet for this scene.")
-        if not self.fit_json_path.exists() or not self.fitted_cyl_path.exists():
-            raise ValueError("Cleanup preview requires an existing fitted overlay.")
-        if len(center_xyz) != 3:
-            raise ValueError("Cleanup preview center must contain exactly three coordinates.")
-
-        center = np.asarray(center_xyz, dtype=np.float64)
-        half_extent = max(float(half_extent_m), 0.0)
-        if half_extent <= 0:
-            raise ValueError("Cleanup preview half extent must be positive.")
-
-        las = laspy.read(self.projection_las)
-        xyz = np.column_stack((las.x, las.y, las.z)).astype(np.float64)
-        if xyz.size == 0:
-            raise ValueError("Cleanup preview cannot run on an empty cloud.")
-
-        exclude_mask = np.all(np.abs(xyz - center.reshape(1, 3)) <= half_extent, axis=1)
-        keep_idx = np.flatnonzero(~exclude_mask)
-        if keep_idx.size == 0:
-            raise ValueError("Cleanup preview would remove all points; widen the box or choose a different center.")
-
-        self.cleanup_preview_dir.mkdir(parents=True, exist_ok=True)
-        write_subset_las(las, keep_idx, self.cleanup_preview_las_path)
-        self._render_overlay_for_las(
-            self.cleanup_preview_las_path,
-            self.cleanup_preview_overlay_path,
-            f"{self.path_name.split('_DistStA')[0]} Step{self.step} | cleanup preview",
-        )
-
-        preview = {
-            "scene_key": self.scene_key,
-            "center_xyz": [float(v) for v in center.tolist()],
-            "half_extent_m": half_extent,
-            "input_projection_las": str(self.projection_las),
-            "cleaned_las": str(self.cleanup_preview_las_path),
-            "raw_overlay": str(self.overlay_preview_path) if self.overlay_preview_path.exists() else None,
-            "cleanup_overlay": str(self.cleanup_preview_overlay_path),
-            "removed_points": int(exclude_mask.sum()),
-            "kept_points": int(keep_idx.size),
-            "updated_at": _now(),
-        }
-        self._write_json(self.cleanup_preview_json_path, preview)
-        return preview
-
-    def _render_overlay_for_las(self, las_path: Path, out_path: Path, title: str) -> None:
-        if not self.fit_json_path.exists() or not self.fitted_cyl_path.exists():
-            raise ValueError("Rendering an overlay requires an existing fitted cylinder.")
-        gray = load_gray_preview(self.hdr_path).astype(np.float64) / 255.0
-        cam = read_cam(str(self.fitted_cyl_path))
-        las = laspy.read(las_path)
-        xyz = np.column_stack((las.x, las.y, las.z)).astype(np.float64)
-        Pc = (cam.Rot @ xyz.T).T + cam.t.reshape(1, 3)
-        d = depth_range(Pc)
-        ij = project_vect_safe(xyz, cam)
-        i_vals = ij[:, 0]
-        j_vals = ij[:, 1]
-        valid = np.isfinite(i_vals) & np.isfinite(j_vals) & np.isfinite(d)
-        H, W = gray.shape
-        if np.any(valid):
-            i_vals = i_vals[valid]
-            j_vals = j_vals[valid]
-            d = d[valid]
-            inside = (i_vals >= 0) & (i_vals < W) & (j_vals >= 0) & (j_vals < H)
-            i_vals = i_vals[inside].astype(np.float32)
-            j_vals = j_vals[inside].astype(np.float32)
-            d = d[inside].astype(np.float32)
-        else:
-            i_vals = np.empty((0,), dtype=np.float32)
-            j_vals = np.empty((0,), dtype=np.float32)
-            d = np.empty((0,), dtype=np.float32)
-        depth_img = rasterize(W, H, i_vals, j_vals, d)
-        save_overlay(gray, depth_img, out_path, title)
 
     def compute_fit(self) -> dict[str, Any]:
         self._write_generated_corresp_txt()
