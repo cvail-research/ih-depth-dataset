@@ -1,6 +1,7 @@
 import csv
 import json
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -142,10 +143,15 @@ class OcclusionCleanupWorkspace:
     @staticmethod
     def _normalize_cleanup_preview(preview: dict[str, Any]) -> dict[str, Any]:
         if "regions" in preview:
-            regions = preview.get("regions") or []
+            regions = []
+            for idx, region in enumerate(preview.get("regions") or []):
+                normalized_region = dict(region)
+                normalized_region.setdefault("region_id", normalized_region.get("region_id") or f"legacy_{idx+1}")
+                regions.append(normalized_region)
             normalized = dict(preview)
             normalized["regions"] = regions
             normalized["cleanup_region_count"] = int(preview.get("cleanup_region_count", len(regions)))
+            normalized["cleanup_region_ids"] = [str(region.get("region_id")) for region in regions]
             return normalized
 
         if "center_xyz" not in preview:
@@ -155,6 +161,7 @@ class OcclusionCleanupWorkspace:
             return normalized
 
         region = {
+            "region_id": f"legacy_1",
             "center_xyz": [float(v) for v in preview.get("center_xyz", [0.0, 0.0, 0.0])],
             "half_extent_m": float(preview.get("half_extent_m", 1.0)),
             "selection_mode": preview.get("selection_mode", "unknown"),
@@ -163,6 +170,7 @@ class OcclusionCleanupWorkspace:
         normalized = dict(preview)
         normalized["regions"] = [region]
         normalized["cleanup_region_count"] = 1
+        normalized["cleanup_region_ids"] = [region["region_id"]]
         normalized["selection_mode_summary"] = {region["selection_mode"]: 1}
         return normalized
 
@@ -184,6 +192,7 @@ class OcclusionCleanupWorkspace:
             "selection_mode": last_region.get("selection_mode", preview.get("selection_mode", "unknown")),
             "cleanup_status": "previewed",
             "cleanup_region_count": int(preview.get("cleanup_region_count", len(regions))),
+            "cleanup_region_ids_json": json.dumps([str(region.get("region_id", "")) for region in regions], sort_keys=True),
             "cleanup_regions_json": json.dumps(regions, sort_keys=True),
             "selection_mode_summary_json": json.dumps(selection_mode_summary, sort_keys=True),
             "center_x_m": float(last_region.get("center_xyz", preview.get("center_xyz", [0.0, 0.0, 0.0]))[0]),
@@ -211,6 +220,7 @@ class OcclusionCleanupWorkspace:
             "selection_mode",
             "cleanup_status",
             "cleanup_region_count",
+            "cleanup_region_ids_json",
             "cleanup_regions_json",
             "selection_mode_summary_json",
             "center_x_m",
@@ -382,6 +392,7 @@ class OcclusionCleanupWorkspace:
         regions = self._current_regions()
         regions.append(
             {
+                "region_id": uuid.uuid4().hex[:10],
                 "center_xyz": [float(v) for v in center_xyz],
                 "half_extent_m": float(half_extent_m),
                 "selection_mode": selection_mode,
@@ -413,17 +424,19 @@ class OcclusionCleanupWorkspace:
             }
         return self._apply_cleanup_regions(regions)
 
-    def remove_cleanup_region(self, index: int) -> dict[str, Any]:
+    def remove_cleanup_region(self, region_id: str) -> dict[str, Any]:
         regions = self._current_regions()
-        if index < 0 or index >= len(regions):
-            raise IndexError(f"No cleanup region at index {index}.")
-        regions.pop(index)
+        match_idx = next((idx for idx, region in enumerate(regions) if str(region.get("region_id")) == str(region_id)), None)
+        if match_idx is None:
+            raise IndexError(f"No cleanup region with id {region_id}.")
+        regions.pop(match_idx)
         if not regions:
             self.clear_cleanup_preview()
             return {
                 "scene_key": self.scene_key,
                 "cleanup_region_count": 0,
                 "regions": [],
+                "cleanup_region_ids": [],
                 "selection_mode_summary": {},
                 "source_projection_las": str(self.projection_las) if self.projection_las else None,
                 "cleaned_las": None,

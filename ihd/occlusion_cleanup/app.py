@@ -100,7 +100,7 @@ INDEX_HTML = """<!doctype html>
           <button id="undoRegionBtn">Undo Last</button>
           <button id="computeFitBtn">Recompute Fit</button>
         </div>
-        <div class="note">Compute Fit is only needed if the scene does not have a fit yet or if you changed correspondences.</div>
+        <div class="note">Recompute Fit is only needed if the scene does not have a fit yet or if you changed correspondences. Cleanup itself does not depend on it once a fit exists.</div>
         <div class="region-list" id="regionList"></div>
         <div class="status" id="cleanupStatus">No cleanup preview yet.</div>
         <div class="note">The raw LiDAR scene is never modified in place. Cleanup outputs are written next to the scene as a derived preview.</div>
@@ -319,8 +319,8 @@ INDEX_HTML = """<!doctype html>
               const center = (region.center_xyz || []).map((v) => Number(v).toFixed(3)).join(', ');
               return `
                 <div class="region-row">
-                  <div class="meta">#${idx + 1} | ${region.selection_mode || 'unknown'} | r=${Number(region.half_extent_m).toFixed(2)} m | ${center}</div>
-                  <button data-region-delete="${idx}">Delete</button>
+                  <div class="meta">#${idx + 1} [${region.region_id || 'legacy'}] | ${region.selection_mode || 'unknown'} | r=${Number(region.half_extent_m).toFixed(2)} m | ${center}</div>
+                  <button data-region-delete="${region.region_id || idx}">Delete</button>
                 </div>`;
             }).join('')
           : '<div class="note">No cleanup regions yet.</div>';
@@ -474,9 +474,9 @@ INDEX_HTML = """<!doctype html>
     regionList.addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-region-delete]');
       if (!button) return;
-      const index = Number(button.getAttribute('data-region-delete'));
-      if (!Number.isInteger(index)) return;
-      state.cleanup_preview = await fetchJson(`/api/cleanup-region-delete/${index}`, {method: 'POST'});
+      const regionId = button.getAttribute('data-region-delete');
+      if (!regionId) return;
+      state.cleanup_preview = await fetchJson(`/api/cleanup-region-delete/${encodeURIComponent(regionId)}`, {method: 'POST'});
       state = await fetchJson('/api/scene');
       updateStatus();
     });
@@ -562,7 +562,7 @@ def create_app(workspace: OcclusionCleanupWorkspace) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/cleanup-region-delete/{index}")
-    async def cleanup_region_delete(index: int) -> JSONResponse:
+    async def cleanup_region_delete(index: str) -> JSONResponse:
         try:
             return JSONResponse(workspace.remove_cleanup_region(index))
         except (ValueError, FileNotFoundError, IndexError) as exc:
