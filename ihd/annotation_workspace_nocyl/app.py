@@ -47,6 +47,8 @@ INDEX_HTML = """<!doctype html>
     .mono { font-family: monospace; font-size: 12px; }
     .fit-previews { min-height: 0; flex: 1; display: flex; align-items: center; justify-content: center; }
     .fit-preview { width: 100%; height: auto; max-height: 100%; min-height: 120px; object-fit: contain; border-radius: 8px; background: #0d1217; display: block; }
+    .cleanup-preview-wrap { margin-top: 10px; }
+    .cleanup-preview-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #9fb0b7; margin: 0 0 6px 0; }
     .verdict-controls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .verdict-controls button { flex: 1; min-width: 0; padding: 8px 10px; border: 0; border-radius: 6px; cursor: pointer; background: #34424f; color: #e8eef2; }
     .verdict-controls button.active { outline: 2px solid #f4f7fa; }
@@ -76,6 +78,13 @@ INDEX_HTML = """<!doctype html>
         <div class="fit-previews">
           <img class="fit-preview" id="overlayPreview" alt="Overlay preview" hidden>
         </div>
+        <div class="cleanup-preview-wrap">
+          <div class="cleanup-preview-title">Occlusion cleanup preview</div>
+          <div class="status" id="cleanupStatus">Select a LiDAR point and preview a box removal.</div>
+          <div class="fit-previews">
+            <img class="fit-preview" id="cleanupOverlayPreview" alt="Cleanup preview" hidden>
+          </div>
+        </div>
         <div class="verdict-controls">
           <button id="verdictGoodBtn" class="verdict-good">Good</button>
           <button id="verdictCautionBtn" class="verdict-caution">Usable with caution</button>
@@ -94,6 +103,9 @@ INDEX_HTML = """<!doctype html>
         <div class="status" id="studyStatus">Timer: 00:00 | Replacements: 0 | Clears: 0</div>
         <div class="status" id="pickStatus">Click on the image to create a 2D target.</div>
         <div class="mono" id="candidatePoint">Candidate point: none</div>
+        <div class="controls">
+          <button class="secondary" id="previewCleanupBtn">Preview Cleanup</button>
+        </div>
         <div class="controls">
           <button class="secondary" id="timerBtn">Start Timing</button>
           <button class="secondary" id="resetTimerBtn">Reset Timer</button>
@@ -126,6 +138,8 @@ INDEX_HTML = """<!doctype html>
     const pickStatus = document.getElementById('pickStatus');
     const studyStatus = document.getElementById('studyStatus');
     const candidatePointEl = document.getElementById('candidatePoint');
+    const cleanupStatus = document.getElementById('cleanupStatus');
+    const cleanupOverlayPreview = document.getElementById('cleanupOverlayPreview');
     const targetListEl = document.getElementById('targetList');
     const cloudRoot = document.getElementById('cloud');
     const fitStatus = document.getElementById('fitStatus');
@@ -281,6 +295,8 @@ INDEX_HTML = """<!doctype html>
       if (!scene) {
         fitStatus.textContent = 'Fit feedback unavailable for this scene.';
         overlayPreview.hidden = true;
+        cleanupOverlayPreview.hidden = true;
+        cleanupStatus.textContent = 'Select a LiDAR point and preview a box removal.';
         drawImageCanvas();
         return;
       }
@@ -288,12 +304,25 @@ INDEX_HTML = """<!doctype html>
         const picked = picks.filter(p => p.status === 'picked').length;
         fitStatus.textContent = `No .cyl yet. Need at least 8 picked points, then Compute Fit. Current: ${picked}.`;
         overlayPreview.hidden = true;
+        cleanupOverlayPreview.hidden = true;
+        cleanupStatus.textContent = 'Preview cleanup becomes available after a fit is computed.';
         drawImageCanvas();
         return;
       }
       fitStatus.textContent = `Fit RMSE: ${fitState.fit_rmse_total.toFixed(3)} px | Fitted .cyl: ${fitState.fitted_cyl}`;
       overlayPreview.src = `/api/artifacts/overlay_preview.png?ts=${encodeURIComponent(fitState.updated_at)}`;
       overlayPreview.hidden = false;
+      if (scene.cleanup_preview && scene.cleanup_preview.cleanup_overlay) {
+        cleanupOverlayPreview.src = `/api/artifacts/cleanup_overlay_preview.png?ts=${encodeURIComponent(scene.cleanup_preview.updated_at || Date.now())}`;
+        cleanupOverlayPreview.hidden = false;
+        cleanupStatus.textContent =
+          `Center: ${scene.cleanup_preview.center_xyz.map(v => v.toFixed(3)).join(', ')} | ` +
+          `Half extent: ${scene.cleanup_preview.half_extent_m.toFixed(2)} m | ` +
+          `Removed points: ${scene.cleanup_preview.removed_points}`;
+      } else {
+        cleanupOverlayPreview.hidden = true;
+        cleanupStatus.textContent = 'Select a LiDAR point and preview a box removal.';
+      }
       drawImageCanvas();
     }
 
@@ -653,6 +682,38 @@ INDEX_HTML = """<!doctype html>
       alert(`Exported picks to ${payload.export_csv}\\nGenerated correspondences: ${payload.generated_corresp_txt}`);
     };
     document.getElementById('computeFitBtn').onclick = async () => { await computeFit(); };
+    document.getElementById('previewCleanupBtn').onclick = async () => {
+      if (!candidatePoint) {
+        statusFlash = 'select a LiDAR point first';
+        updateStatus();
+        return;
+      }
+      const halfExtentRaw = window.prompt('Cleanup box half extent in meters:', '1.0');
+      if (halfExtentRaw === null) return;
+      const half_extent_m = Number(halfExtentRaw);
+      if (!Number.isFinite(half_extent_m) || half_extent_m <= 0) {
+        alert('Please enter a positive number for the half extent.');
+        return;
+      }
+      cleanupStatus.textContent = 'Computing cleanup preview...';
+      const payload = await fetchJson('/api/occlusion-preview', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          center_xyz: candidatePoint,
+          half_extent_m,
+        }),
+      });
+      scene.cleanup_preview = payload;
+      cleanupOverlayPreview.src = `/api/artifacts/cleanup_overlay_preview.png?ts=${encodeURIComponent(payload.updated_at || Date.now())}`;
+      cleanupOverlayPreview.hidden = false;
+      cleanupStatus.textContent =
+        `Center: ${payload.center_xyz.map(v => v.toFixed(3)).join(', ')} | ` +
+        `Half extent: ${payload.half_extent_m.toFixed(2)} m | ` +
+        `Removed points: ${payload.removed_points}`;
+      statusFlash = 'cleanup preview updated';
+      updateStatus();
+    };
     document.getElementById('timerBtn').onclick = async () => {
       if (sessionState && sessionState.timing_running) {
         const elapsed = currentDisplayedElapsedSeconds();
@@ -719,6 +780,11 @@ class TimerStopPayload(BaseModel):
     elapsed_seconds: float | None = None
 
 
+class OcclusionPreviewPayload(BaseModel):
+    center_xyz: list[float]
+    half_extent_m: float = 1.0
+
+
 def create_app(workspace: NoCylSceneWorkspace) -> FastAPI:
     workspace.prepare()
     app = FastAPI(title="Annotation Workspace No-Cyl MVP")
@@ -762,11 +828,19 @@ def create_app(workspace: NoCylSceneWorkspace) -> FastAPI:
     async def compute_fit() -> JSONResponse:
         return JSONResponse(workspace.compute_fit())
 
+    @app.post("/api/occlusion-preview")
+    async def occlusion_preview(payload: OcclusionPreviewPayload) -> JSONResponse:
+        try:
+            return JSONResponse(workspace.preview_occlusion_cleanup(payload.center_xyz, payload.half_extent_m))
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/artifacts/{name}")
     async def get_artifact(name: str) -> FileResponse:
         allowed = {
             "overlay_preview.png": workspace.overlay_preview_path,
             "reprojection_preview.png": workspace.reprojection_preview_path,
+            "cleanup_overlay_preview.png": workspace.cleanup_preview_overlay_path,
         }
         path = allowed.get(name)
         if path is None or not path.exists():
