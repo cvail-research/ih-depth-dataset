@@ -1,0 +1,23 @@
+{
+  "candidate_count": 74,
+  "cleanup_manifest": "manifests/06_occlusion_cleanup_manifest_current.csv",
+  "cleanup_reviewed_count": 9,
+  "cleanup_status_counts": {
+    "not_reviewed": 297,
+    "previewed": 9
+  },
+  "defer_count": 203,
+  "exclude_count": 52,
+  "frozen_manifest_version": "v0",
+  "good_and_candidate_count": 51,
+  "good_count": 118,
+  "include_count": 51,
+  "quality_manifest": "manifests/05_scene_quality_manifest_current.csv",
+  "quant_gate_pass_count": 51,
+  "release_decision_counts": {
+    "defer": 203,
+    "exclude": 52,
+    "include": 51
+  },
+  "scene_count": 306
+}
