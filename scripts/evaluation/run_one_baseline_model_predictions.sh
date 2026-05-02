@@ -15,46 +15,39 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 mkdir -p logs/out logs/err
 
-MODEL="${1:?Usage: sbatch $0 <model> [scene_manifest] [limit] [out_root]}"
-SCENE_MANIFEST="${2:-analysis/qc_review/reproducible_qc_report/scenes_accepted_by_rmse5px_distance_5pct_with_drop_rule.csv}"
-LIMIT="${3:-3}"
-OUT_ROOT="${4:-analysis/evaluation/baseline_smoke_predictions}"
-
-INPUT_MANIFEST="${OUT_ROOT}/prediction_inputs.csv"
+MODEL="${1:?Usage: sbatch $0 <model> [scene_manifest] [device] [out_root]}"
+SCENE_MANIFEST="${2:-manifests/07_frozen_manifest_v0.csv}"
+DEVICE="${3:-cuda}"
+OUT_ROOT="${4:-analysis/evaluation/baseline_predictions_full}"
 mkdir -p "${OUT_ROOT}"
-
-uv run python -m ihd.evaluation.build_prediction_input_manifest \
-  --scene-manifest "${SCENE_MANIFEST}" \
-  --limit "${LIMIT}" \
-  --out-csv "${INPUT_MANIFEST}"
 
 case "${MODEL}" in
   unik3d)
     if [[ -n "${UNIK3D_PYTHON:-}" ]]; then
-      PYTHON_BIN="${UNIK3D_PYTHON}" scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+      PYTHON_BIN="${UNIK3D_PYTHON}" scripts/evaluation/run_predict_unik3d.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     else
-      scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+      scripts/evaluation/run_predict_unik3d.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     fi
     ;;
   unidepthv2)
     if [[ -n "${UNIDEPTHV2_PYTHON:-}" ]]; then
-      PYTHON_BIN="${UNIDEPTHV2_PYTHON}" scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      PYTHON_BIN="${UNIDEPTHV2_PYTHON}" scripts/evaluation/run_predict_unidepthv2.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     else
-      scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      scripts/evaluation/run_predict_unidepthv2.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     fi
     ;;
   depthanythingv2)
     if [[ -n "${DEPTHANYTHINGV2_PYTHON:-}" ]]; then
-      PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON}" scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON}" scripts/evaluation/run_predict_depthanythingv2.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     else
-      scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      scripts/evaluation/run_predict_depthanythingv2.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     fi
     ;;
   depthpro)
     if [[ -n "${DEPTHPRO_PYTHON:-}" ]]; then
-      PYTHON_BIN="${DEPTHPRO_PYTHON}" scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      PYTHON_BIN="${DEPTHPRO_PYTHON}" scripts/evaluation/run_predict_depthpro.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     else
-      scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      scripts/evaluation/run_predict_depthpro.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     fi
     ;;
   *)

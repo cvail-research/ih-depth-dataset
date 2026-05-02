@@ -9,4 +9,4 @@ if [[ -n "${PYTHON_BIN:-}" ]]; then
   exec "${PYTHON_BIN}" -m ihd.inference.baseline.predict_depthanythingv2 "$@"
 fi
 
-exec uv run --extra depthanythingv2 python -m ihd.inference.baseline.predict_depthanythingv2 "$@"
+exec uv run --frozen --no-sync --extra depthanythingv2 python -m ihd.inference.baseline.predict_depthanythingv2 "$@"

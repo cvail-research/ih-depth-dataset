@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from ihd.evaluation.model_io import (
+    build_prediction_input_rows_from_scene_manifest,
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
     save_depth_prediction,
@@ -23,10 +24,14 @@ def parse_args() -> argparse.Namespace:
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
     src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
+    src.add_argument("--scene-manifest", help="Scene manifest with collection/path/step columns.")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="lpiccinelli/unik3d-vitl")
     ap.add_argument("--device", default="cpu", help="Use cpu for numerical stability unless verified otherwise.")
     ap.add_argument("--resolution-level", type=int, default=9)
+    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
+    ap.add_argument("--disk-root", default="/disk")
+    ap.add_argument("--limit", type=int)
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -68,7 +73,17 @@ def main() -> None:
         print(pred)
         return
 
-    for row in read_prediction_input_manifest(args.manifest):
+    if args.scene_manifest:
+        rows_in = build_prediction_input_rows_from_scene_manifest(
+            args.scene_manifest,
+            depth_label_root=args.depth_label_root,
+            disk_root=args.disk_root,
+            limit=args.limit,
+        )
+    else:
+        rows_in = read_prediction_input_manifest(args.manifest)
+
+    for row in rows_in:
         out_dir = scene_out_dir(args.out_dir, MODEL_SLUG, row)
         pred = predict_one(model, row["hdr_path"], out_dir, args.model_name, args.device, not args.no_vis)
         rows_out.append({**row, "model": MODEL_SLUG, "model_name": args.model_name, "prediction_path": str(pred)})
@@ -77,4 +92,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

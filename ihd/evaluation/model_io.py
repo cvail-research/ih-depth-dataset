@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+import pandas as pd
 import spectral as spy
 
 
@@ -121,6 +123,96 @@ def read_prediction_input_manifest(path: str | Path) -> list[dict[str, str]]:
     return rows
 
 
+def _step_number(step: str) -> int:
+    match = re.search(r"step(\d+)", str(step), flags=re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Cannot parse step number from {step}")
+    return int(match.group(1))
+
+
+def _path_number(path: str) -> int:
+    match = re.search(r"path(\d+)", str(path), flags=re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Cannot parse path number from {path}")
+    return int(match.group(1))
+
+
+def _collection_tag(collection: str) -> str:
+    match = re.match(r"^(IHTest_\d{6})_DistStA", collection)
+    if not match:
+        return collection.split("_DistStA")[0]
+    return match.group(1)
+
+
+def _find_hdr(row: pd.Series, disk_root: Path) -> str | None:
+    if "hdr_path" in row and pd.notna(row["hdr_path"]) and Path(str(row["hdr_path"])).exists():
+        return str(row["hdr_path"])
+    if "disk_reference" in row and pd.notna(row["disk_reference"]):
+        scene_dir = Path(str(row["disk_reference"])).parent
+        hdrs = sorted(scene_dir.glob("*LWHSI1*.hdr"))
+        if hdrs:
+            collect0 = [p for p in hdrs if "collect0" in p.name]
+            return str((collect0 or hdrs)[0])
+
+    collection = str(row["collection"])
+    pnum = _path_number(str(row["path"]))
+    snum = _step_number(str(row["step"]))
+    tag = _collection_tag(collection)
+    path_dir = disk_root / collection / f"Path{pnum}_DistStA"
+    candidates = [
+        path_dir / f"Path{pnum}_Step{snum}" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_collect0_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_DistStA.hdr",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    step_dirs = sorted(path_dir.glob(f"Path{pnum}_Step{snum}*"))
+    for step_dir in step_dirs:
+        hdrs = sorted(step_dir.glob("*LWHSI1*.hdr"))
+        if hdrs:
+            collect0 = [p for p in hdrs if "collect0" in p.name]
+            return str((collect0 or hdrs)[0])
+    return None
+
+
+def _label_path(row: pd.Series, depth_label_root: Path) -> str | None:
+    if "label_path" in row and pd.notna(row["label_path"]) and Path(str(row["label_path"])).exists():
+        return str(row["label_path"])
+    p = depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
+    return str(p) if p.exists() else None
+
+
+def build_prediction_input_rows_from_scene_manifest(
+    scene_manifest: str | Path,
+    depth_label_root: str | Path = "analysis/depth_labels/platform_sphere_r4p0",
+    disk_root: str | Path = "/disk",
+    limit: int | None = None,
+) -> list[dict[str, str]]:
+    df = pd.read_csv(scene_manifest)
+    rows: list[dict[str, str]] = []
+    for row in df.sort_values(["collection", "path", "step"]).itertuples(index=False):
+        series = pd.Series(row._asdict())
+        hdr = _find_hdr(series, Path(disk_root))
+        label = _label_path(series, Path(depth_label_root))
+        if not hdr or not label:
+            continue
+        scene = series.get("scene") or series.get("scene_id") or f"{series['collection']} / {series['path']} / {series['step']}"
+        rows.append(
+            {
+                "scene": scene,
+                "collection": series["collection"],
+                "path": series["path"],
+                "step": series["step"],
+                "hdr_path": hdr,
+                "label_path": label,
+            }
+        )
+        if limit and len(rows) >= limit:
+            break
+    return rows
+
+
 def scene_out_dir(out_root: str | Path, model_slug: str, row: dict[str, str]) -> Path:
     collection = row.get("collection") or "unknown_collection"
     path = row.get("path") or "unknown_path"
@@ -140,4 +232,3 @@ def write_prediction_manifest(path: str | Path, rows: Iterable[dict[str, Any]]) 
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(rows)
-
