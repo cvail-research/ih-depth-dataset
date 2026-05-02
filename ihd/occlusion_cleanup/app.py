@@ -244,7 +244,7 @@ INDEX_HTML = """<!doctype html>
       const clickY = (event.clientY - rect.top) * (naturalHeight / rect.height);
       let bestIdx = -1;
       let bestDist2 = overlayPickRadiusPx * overlayPickRadiusPx;
-      let bestDepth = Infinity;
+      let bestDepth = -Infinity;
       for (let i = 0; i < pointcloud.projected_u.length; i += 1) {
         if (pointcloud.projected_valid && !pointcloud.projected_valid[i]) continue;
         const u = pointcloud.projected_u[i];
@@ -254,7 +254,7 @@ INDEX_HTML = """<!doctype html>
         const dy = v - clickY;
         const dist2 = dx * dx + dy * dy;
         const depth = Number(pointcloud.projected_depth[i]);
-        if (dist2 < bestDist2 || (Math.abs(dist2 - bestDist2) <= 1e-6 && depth < bestDepth)) {
+        if (dist2 < bestDist2 || (Math.abs(dist2 - bestDist2) <= 1e-6 && depth > bestDepth)) {
           bestDist2 = dist2;
           bestDepth = depth;
           bestIdx = i;
