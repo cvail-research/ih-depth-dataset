@@ -1,0 +1,61 @@
+collection,path,step,scene,source_pool,verdict,fit_rmse_total_px,distance_all_points_pass_le_5pct,annotation_status
+IHTest_202009_DistStA,path1,path1_step2,IHTest_202009_DistStA / path1 / path1_step2,without_prior_cyl,good,1.3489221053240341,True,annotated
+IHTest_202009_DistStA,path1,path1_step3,IHTest_202009_DistStA / path1 / path1_step3,without_prior_cyl,good,0.47149406425259127,True,annotated
+IHTest_202009_DistStA,path3,path3_step4,IHTest_202009_DistStA / path3 / path3_step4,without_prior_cyl,usable with caution,1.7288933910102149,True,annotated
+IHTest_202009_DistStA,path7,path7_step5,IHTest_202009_DistStA / path7 / path7_step5,without_prior_cyl,good,3.287146278858714,True,annotated
+IHTest_202009_DistStA,path8,path8_step1,IHTest_202009_DistStA / path8 / path8_step1,without_prior_cyl,good,3.7907141675266858,True,annotated
+IHTest_202009_DistStA,path8,path8_step3,IHTest_202009_DistStA / path8 / path8_step3,without_prior_cyl,good,2.3199286936820798,True,annotated
+IHTest_202104_DistStA,path1,path1_step0,IHTest_202104_DistStA / path1 / path1_step0,without_prior_cyl,good,0.3839383014883739,True,annotated
+IHTest_202104_DistStA,path10,path10_step1,IHTest_202104_DistStA / path10 / path10_step1,without_prior_cyl,good,2.9360799806675777,True,annotated
+IHTest_202104_DistStA,path24,path24_step8,IHTest_202104_DistStA / path24 / path24_step8,with_prior_cyl,good,4.917738839856734,True,annotated
+IHTest_202104_DistStA,path5,path5_step1,IHTest_202104_DistStA / path5 / path5_step1,without_prior_cyl,good,0.5980739389596423,True,annotated
+IHTest_202104_DistStA,path5,path5_step4,IHTest_202104_DistStA / path5 / path5_step4,without_prior_cyl,good,2.3864893140990753,True,annotated
+IHTest_202108_DistStA,path12,path12_step2,IHTest_202108_DistStA / path12 / path12_step2,without_prior_cyl,good,1.7089676247760535,True,annotated
+IHTest_202108_DistStA,path12,path12_step3,IHTest_202108_DistStA / path12 / path12_step3,without_prior_cyl,good,2.34189311516586,True,annotated
+IHTest_202108_DistStA,path2,path2_step4,IHTest_202108_DistStA / path2 / path2_step4,without_prior_cyl,usable with caution,3.407031658442644,True,annotated
+IHTest_202108_DistStA,path7,path7_step22,IHTest_202108_DistStA / path7 / path7_step22,without_prior_cyl,good,2.1586462190315325,True,annotated
+IHTest_202108_DistStA,path7,path7_step9,IHTest_202108_DistStA / path7 / path7_step9,without_prior_cyl,good,1.5453358827241117,True,annotated
+IHTest_202204_DistStA-20221110,path13,path13_step4,IHTest_202204_DistStA-20221110 / path13 / path13_step4,without_prior_cyl,good,2.5348802039414595,True,annotated
+IHTest_202204_DistStA-20221110,path13,path13_step9,IHTest_202204_DistStA-20221110 / path13 / path13_step9,without_prior_cyl,usable with caution,2.200132591994622,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step1,IHTest_202204_DistStA-20221110 / path15 / path15_step1,without_prior_cyl,good,1.630347987634692,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step11,IHTest_202204_DistStA-20221110 / path15 / path15_step11,without_prior_cyl,good,1.774863688273548,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step16,IHTest_202204_DistStA-20221110 / path15 / path15_step16,without_prior_cyl,good,1.5088941692420932,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step21,IHTest_202204_DistStA-20221110 / path15 / path15_step21,without_prior_cyl,good,1.5933848879860248,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step31,IHTest_202204_DistStA-20221110 / path15 / path15_step31,without_prior_cyl,good,1.9213047876434608,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step36,IHTest_202204_DistStA-20221110 / path15 / path15_step36,without_prior_cyl,good,2.7019631647204325,True,annotated
+IHTest_202204_DistStA-20221110,path15,path15_step41,IHTest_202204_DistStA-20221110 / path15 / path15_step41,without_prior_cyl,good,2.983413221598681,True,annotated
+IHTest_202204_DistStA-20221110,path19,path19_step1,IHTest_202204_DistStA-20221110 / path19 / path19_step1,without_prior_cyl,good,2.0725156770060296,True,annotated
+IHTest_202204_DistStA-20221110,path20,path20_step1,IHTest_202204_DistStA-20221110 / path20 / path20_step1,without_prior_cyl,good,1.3054842254287902,True,annotated
+IHTest_202204_DistStA-20221110,path21,path21_step18,IHTest_202204_DistStA-20221110 / path21 / path21_step18,without_prior_cyl,usable with caution,4.221943845032461,True,annotated
+IHTest_202204_DistStA-20221110,path26,path26_step17,IHTest_202204_DistStA-20221110 / path26 / path26_step17,without_prior_cyl,usable with caution,4.2543855556050065,True,annotated
+IHTest_202204_DistStA-20221110,path28,path28_step1,IHTest_202204_DistStA-20221110 / path28 / path28_step1,without_prior_cyl,good,2.1037156454767145,True,annotated
+IHTest_202204_DistStA-20221110,path28,path28_step11,IHTest_202204_DistStA-20221110 / path28 / path28_step11,without_prior_cyl,good,4.060202547932909,True,annotated
+IHTest_202204_DistStA-20221110,path28,path28_step12,IHTest_202204_DistStA-20221110 / path28 / path28_step12,without_prior_cyl,usable with caution,2.8855678373610956,True,annotated
+IHTest_202204_DistStA-20221110,path28,path28_step2,IHTest_202204_DistStA-20221110 / path28 / path28_step2,without_prior_cyl,good,1.0844160875128785,True,annotated
+IHTest_202204_DistStA-20221110,path28,path28_step3,IHTest_202204_DistStA-20221110 / path28 / path28_step3,without_prior_cyl,good,0.6711828520907781,True,annotated
+IHTest_202204_DistStA-20221110,path30,path30_step1,IHTest_202204_DistStA-20221110 / path30 / path30_step1,without_prior_cyl,good,1.2584911513766663,True,annotated
+IHTest_202204_DistStA-20221110,path31,path31_step11,IHTest_202204_DistStA-20221110 / path31 / path31_step11,without_prior_cyl,good,3.3018290491542794,True,annotated
+IHTest_202204_DistStA-20221110,path31,path31_step13,IHTest_202204_DistStA-20221110 / path31 / path31_step13,without_prior_cyl,good,3.5164744315402063,True,annotated
+IHTest_202204_DistStA-20221110,path31,path31_step4,IHTest_202204_DistStA-20221110 / path31 / path31_step4,without_prior_cyl,good,2.7941215178791277,True,annotated
+IHTest_202204_DistStA-20221110,path31,path31_step5,IHTest_202204_DistStA-20221110 / path31 / path31_step5,without_prior_cyl,usable with caution,2.7947593556345187,True,annotated
+IHTest_202204_DistStA-20221110,path31,path31_step9,IHTest_202204_DistStA-20221110 / path31 / path31_step9,without_prior_cyl,good,2.206656025952265,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step10,IHTest_202204_DistStA-20221110 / path33 / path33_step10,without_prior_cyl,good,1.9455307672534377,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step3,IHTest_202204_DistStA-20221110 / path33 / path33_step3,without_prior_cyl,good,2.4959294221093753,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step4,IHTest_202204_DistStA-20221110 / path33 / path33_step4,without_prior_cyl,good,2.634295390939413,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step5,IHTest_202204_DistStA-20221110 / path33 / path33_step5,without_prior_cyl,good,2.5542563193059005,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step6,IHTest_202204_DistStA-20221110 / path33 / path33_step6,without_prior_cyl,good,4.2630062365188435,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step7,IHTest_202204_DistStA-20221110 / path33 / path33_step7,without_prior_cyl,good,3.2485139744656877,True,annotated
+IHTest_202204_DistStA-20221110,path33,path33_step9,IHTest_202204_DistStA-20221110 / path33 / path33_step9,without_prior_cyl,good,3.869564795931503,True,annotated
+IHTest_202204_DistStA-20221110,path35,path35_step1,IHTest_202204_DistStA-20221110 / path35 / path35_step1,without_prior_cyl,good,1.5683870407957563,True,annotated
+IHTest_202204_DistStA-20221110,path36,path36_step11,IHTest_202204_DistStA-20221110 / path36 / path36_step11,without_prior_cyl,good,1.9817461164060972,True,annotated
+IHTest_202204_DistStA-20221110,path36,path36_step16,IHTest_202204_DistStA-20221110 / path36 / path36_step16,without_prior_cyl,good,1.8497460864932438,True,annotated
+IHTest_202204_DistStA-20221110,path36,path36_step2,IHTest_202204_DistStA-20221110 / path36 / path36_step2,without_prior_cyl,good,1.6965267009138185,True,annotated
+IHTest_202204_DistStA-20221110,path36,path36_step6,IHTest_202204_DistStA-20221110 / path36 / path36_step6,without_prior_cyl,good,1.9748334083576875,True,annotated
+IHTest_202204_DistStA-20221110,path38,path38_step5,IHTest_202204_DistStA-20221110 / path38 / path38_step5,without_prior_cyl,good,3.7544773162791087,True,annotated
+IHTest_202204_DistStA-20221110,path38,path38_step9,IHTest_202204_DistStA-20221110 / path38 / path38_step9,without_prior_cyl,good,4.552049422346696,True,annotated
+IHTest_202204_DistStA-20221110,path5,path5_step21,IHTest_202204_DistStA-20221110 / path5 / path5_step21,without_prior_cyl,good,1.300849878469733,True,annotated
+IHTest_202204_DistStA-20221110,path5,path5_step42,IHTest_202204_DistStA-20221110 / path5 / path5_step42,without_prior_cyl,usable with caution,1.8743946625330339,True,annotated
+IHTest_202204_DistStA-20221110,path7,path7_step1,IHTest_202204_DistStA-20221110 / path7 / path7_step1,without_prior_cyl,good,2.148940780713758,True,annotated
+IHTest_202204_DistStA-20221110,path7,path7_step10,IHTest_202204_DistStA-20221110 / path7 / path7_step10,without_prior_cyl,usable with caution,3.4150999214009765,True,annotated
+IHTest_202204_DistStA-20221110,path7,path7_step3,IHTest_202204_DistStA-20221110 / path7 / path7_step3,without_prior_cyl,good,4.658889305889109,True,annotated
+IHTest_202204_DistStA-20221110,path7,path7_step8,IHTest_202204_DistStA-20221110 / path7 / path7_step8,without_prior_cyl,good,3.14541397642625,True,annotated
