@@ -6,9 +6,9 @@
     "not_reviewed": 294,
     "previewed": 12
   },
-  "defer_count": 203,
+  "defer_count": 202,
   "depth_label_root": "analysis/depth_labels/platform_sphere_r4p0",
-  "exclude_count": 52,
+  "exclude_count": 53,
   "frozen_manifest_version": "v0",
   "good_and_candidate_count": 51,
   "good_count": 118,
@@ -34,8 +34,8 @@
     "skipped_before_annotation_lwhsi_artifacts": 1
   },
   "release_decision_counts": {
-    "defer": 203,
-    "exclude": 52,
+    "defer": 202,
+    "exclude": 53,
     "include": 51
   },
   "scene_count": 306,

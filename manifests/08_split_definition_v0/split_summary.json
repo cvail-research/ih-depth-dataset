@@ -10,11 +10,11 @@
   "num_groups": 18,
   "num_scenes": 51,
   "split_group_counts": {
-    "test": 4,
-    "train": 14
+    "test": 7,
+    "train": 11
   },
   "split_scene_counts": {
-    "test": 6,
-    "train": 45
+    "test": 10,
+    "train": 41
   }
 }
