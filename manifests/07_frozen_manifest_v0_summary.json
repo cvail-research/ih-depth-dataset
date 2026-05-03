@@ -6,13 +6,13 @@
     "not_reviewed": 297,
     "previewed": 9
   },
-  "defer_count": 205,
+  "defer_count": 204,
   "depth_label_root": "analysis/depth_labels/platform_sphere_r4p0",
   "exclude_count": 52,
   "frozen_manifest_version": "v0",
   "good_and_candidate_count": 51,
   "good_count": 118,
-  "include_count": 49,
+  "include_count": 50,
   "legacy_source_pool_counts": {
     "with_prior_cyl": 60,
     "without_prior_cyl": 246
@@ -34,9 +34,9 @@
     "skipped_before_annotation_lwhsi_artifacts": 1
   },
   "release_decision_counts": {
-    "defer": 205,
+    "defer": 204,
     "exclude": 52,
-    "include": 49
+    "include": 50
   },
   "scene_count": 306,
   "scene_spot_id_counts": {
@@ -78,12 +78,10 @@
     "spot_014": 2,
     "spot_016": 17,
     "spot_018": 9,
-    "spot_020": 1,
+    "spot_020": 3,
     "spot_023": 16,
-    "spot_025": 1,
     "spot_027": 21,
     "spot_029": 16,
-    "spot_031": 1,
     "spot_033": 10,
     "spot_035": 7,
     "spot_038": 9
