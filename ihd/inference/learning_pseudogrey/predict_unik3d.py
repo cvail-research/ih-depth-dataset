@@ -11,6 +11,7 @@ from ihd.evaluation.model_io import (
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
     save_depth_prediction,
+    save_input_prediction_groundtruth_figures,
     scene_out_dir,
     write_prediction_manifest,
 )
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
     src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
     src.add_argument("--scene-manifest", help="Scene manifest with collection/path/step columns.")
+    ap.add_argument("--label-path", help="Ground-truth depth npz path when using --hdr.")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="lpiccinelli/unik3d-vitl")
     ap.add_argument("--device", default="cpu", help="Use cpu for numerical stability unless verified otherwise.")
@@ -51,7 +53,15 @@ def load_model(model_name: str, device: str, resolution_level: int):
     return model
 
 
-def predict_one(model, hdr_path: str, out_dir: Path, model_name: str, device: str, save_vis: bool) -> Path:
+def predict_one(
+    model,
+    hdr_path: str,
+    out_dir: Path,
+    model_name: str,
+    device: str,
+    save_vis: bool,
+    label_path: str | None = None,
+) -> Path:
     import torch
 
     rgb, meta = load_pseudobroadband_rgb(hdr_path)
@@ -61,7 +71,26 @@ def predict_one(model, hdr_path: str, out_dir: Path, model_name: str, device: st
         outputs = model.infer(rgb=rgb_torch, camera=None, normalize=True, rays=None)
     depth = outputs["depth"].detach().cpu().numpy().squeeze().astype(np.float32)
     meta.update({"inference_seconds": time.time() - t0, "model_slug": MODEL_SLUG})
-    return save_depth_prediction(depth, out_dir, model_name, hdr_path, meta, save_visualization=save_vis)
+    pred_path = save_depth_prediction(depth, out_dir, model_name, hdr_path, meta, save_visualization=save_vis)
+    gt_depth = None
+    gt_mask = None
+    if label_path and Path(label_path).exists():
+        label_npz = np.load(label_path)
+        gt_depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
+        if "valid_mask" in label_npz:
+            gt_mask = np.asarray(label_npz["valid_mask"], dtype=bool)
+        else:
+            gt_mask = np.isfinite(gt_depth) & (gt_depth > 0.0)
+        gt_mask = gt_mask & np.isfinite(gt_depth) & (gt_depth > 0.0)
+    input_gray_u8 = np.mean(rgb.astype(np.float32), axis=2).clip(0, 255).astype(np.uint8)
+    save_input_prediction_groundtruth_figures(
+        input_gray_u8=input_gray_u8,
+        prediction_m=depth,
+        out_dir=out_dir,
+        ground_truth_m=gt_depth,
+        ground_truth_mask=gt_mask,
+    )
+    return pred_path
 
 
 def main() -> None:
@@ -69,7 +98,15 @@ def main() -> None:
     model = load_model(args.model_name, args.device, args.resolution_level)
     rows_out = []
     if args.hdr:
-        pred = predict_one(model, args.hdr, Path(args.out_dir), args.model_name, args.device, not args.no_vis)
+        pred = predict_one(
+            model,
+            args.hdr,
+            Path(args.out_dir),
+            args.model_name,
+            args.device,
+            not args.no_vis,
+            label_path=args.label_path,
+        )
         print(pred)
         return
 
@@ -85,7 +122,15 @@ def main() -> None:
 
     for row in rows_in:
         out_dir = scene_out_dir(args.out_dir, MODEL_SLUG, row)
-        pred = predict_one(model, row["hdr_path"], out_dir, args.model_name, args.device, not args.no_vis)
+        pred = predict_one(
+            model,
+            row["hdr_path"],
+            out_dir,
+            args.model_name,
+            args.device,
+            not args.no_vis,
+            label_path=row.get("label_path"),
+        )
         rows_out.append({**row, "model": MODEL_SLUG, "model_name": args.model_name, "prediction_path": str(pred)})
     write_prediction_manifest(Path(args.out_dir) / MODEL_SLUG / "prediction_manifest.csv", rows_out)
 

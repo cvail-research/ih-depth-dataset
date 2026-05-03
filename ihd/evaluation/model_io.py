@@ -113,6 +113,96 @@ def save_depth_visualization(depth_m: np.ndarray, out_path: str | Path) -> None:
     plt.close()
 
 
+def save_input_prediction_groundtruth_figures(
+    *,
+    input_gray_u8: np.ndarray,
+    prediction_m: np.ndarray,
+    out_dir: str | Path,
+    ground_truth_m: np.ndarray | None = None,
+    ground_truth_mask: np.ndarray | None = None,
+) -> None:
+    """Save input/prediction/ground-truth figures with layout-compatible colorbars."""
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    input_img = np.asarray(input_gray_u8, dtype=np.uint8)
+    pred = np.asarray(prediction_m, dtype=np.float32)
+    gt = np.asarray(ground_truth_m, dtype=np.float32) if ground_truth_m is not None else None
+    gt_mask = np.asarray(ground_truth_mask, dtype=bool) if ground_truth_mask is not None else None
+
+    if gt is not None and gt_mask is not None and np.any(gt_mask):
+        shared_vmin = float(np.nanmin(gt[gt_mask]))
+        shared_vmax = float(np.nanmax(gt[gt_mask]))
+    else:
+        finite_pred = np.isfinite(pred)
+        shared_vmin = float(np.nanmin(pred[finite_pred])) if np.any(finite_pred) else 0.0
+        shared_vmax = float(np.nanmax(pred[finite_pred])) if np.any(finite_pred) else 1.0
+
+    def _append_empty_colorbar_axis(ax, fig) -> None:
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="2.8%", pad=0.04)
+        cax.set_xticks([])
+        cax.set_yticks([])
+        cax.set_ylabel("Depth (m)", labelpad=12, color=(0, 0, 0, 0))
+        for spine in cax.spines.values():
+            spine.set_visible(False)
+        cax.patch.set_alpha(0.0)
+
+    def _save_single_input() -> None:
+        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
+        ax.imshow(input_img, cmap="gray", aspect="auto")
+        ax.axis("off")
+        _append_empty_colorbar_axis(ax, fig)
+        fig.subplots_adjust(left=0.01, right=0.99, top=0.995, bottom=0.02)
+        fig.savefig(out / "input.png", dpi=180, bbox_inches="tight", pad_inches=0.02)
+        plt.close(fig)
+
+    def _save_single_depth(depth: np.ndarray, filename: str, *, vmin: float, vmax: float) -> None:
+        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
+        im = ax.imshow(depth, cmap="viridis", vmin=vmin, vmax=vmax, aspect="auto")
+        ax.axis("off")
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="2.8%", pad=0.04)
+        cb = fig.colorbar(im, cax=cax)
+        cb.set_label("Depth (m)", labelpad=12)
+        fig.subplots_adjust(left=0.01, right=0.99, top=0.995, bottom=0.02)
+        fig.savefig(out / filename, dpi=180, bbox_inches="tight", pad_inches=0.02)
+        plt.close(fig)
+
+    _save_single_input()
+    _save_single_depth(pred, "prediction.png", vmin=shared_vmin, vmax=shared_vmax)
+
+    if gt is None or gt_mask is None:
+        return
+
+    gt_vis = np.where(gt_mask, gt, np.nan)
+    _save_single_depth(gt_vis, "ground_truth.png", vmin=shared_vmin, vmax=shared_vmax)
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 7))
+    axes[0].imshow(input_img, cmap="gray", aspect="auto")
+    axes[0].set_title("Input")
+    im_pred = axes[1].imshow(pred, cmap="viridis", vmin=shared_vmin, vmax=shared_vmax, aspect="auto")
+    axes[1].set_title("Prediction")
+    im_gt = axes[2].imshow(gt_vis, cmap="viridis", vmin=shared_vmin, vmax=shared_vmax, aspect="auto")
+    axes[2].set_title("Ground Truth")
+    for ax in axes:
+        ax.axis("off")
+
+    _append_empty_colorbar_axis(axes[0], fig)
+    for ax, im in ((axes[1], im_pred), (axes[2], im_gt)):
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="2.8%", pad=0.04)
+        cb = fig.colorbar(im, cax=cax)
+        cb.set_label("Depth (m)", labelpad=12)
+
+    fig.subplots_adjust(left=0.02, right=0.99, top=0.975, bottom=0.03, hspace=0.18)
+    fig.savefig(out / "comparison_3x1.png", dpi=180, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+
+
 def read_prediction_input_manifest(path: str | Path) -> list[dict[str, str]]:
     with Path(path).open(newline="") as f:
         rows = list(csv.DictReader(f))

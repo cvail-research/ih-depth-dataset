@@ -5,7 +5,9 @@ from pathlib import Path
 
 from ihd.evaluation.model_io import (
     build_prediction_input_rows_from_scene_manifest,
+    load_pseudobroadband_rgb,
     read_prediction_input_manifest,
+    save_input_prediction_groundtruth_figures,
     scene_out_dir,
     write_prediction_manifest,
 )
@@ -24,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
     src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
     src.add_argument("--scene-manifest", help="Scene manifest with collection/path/step columns.")
+    ap.add_argument("--label-path", help="Ground-truth depth npz path when using --hdr.")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--data-dir", default="ihd/inference/physics_based/data")
     ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
@@ -48,6 +51,7 @@ def predict_one(
     idx1: int | None,
     idx2: int | None,
     save_vis: bool,
+    label_path: str | None = None,
 ) -> Path:
     meas, lambda_um, attenuation, _downwelling, sensor = load_scene(
         hdr_path,
@@ -72,7 +76,7 @@ def predict_one(
         "lambda_idx1_um": float(lambda_um[int(idx1)]),
         "lambda_idx2_um": float(lambda_um[int(idx2)]),
     }
-    return save_depth_prediction(
+    pred_path = save_depth_prediction(
         d_hat,
         out_dir,
         model_name=method,
@@ -80,6 +84,27 @@ def predict_one(
         metadata=metadata,
         save_visualization=save_vis,
     )
+    rgb, _ = load_pseudobroadband_rgb(hdr_path)
+    input_gray_u8 = np.mean(rgb.astype(np.float32), axis=2).clip(0, 255).astype(np.uint8)
+    gt_depth = None
+    gt_mask = None
+    if label_path and Path(label_path).exists():
+        label_npz = np.load(label_path)
+        gt_depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
+        if "valid_mask" in label_npz:
+            gt_mask = np.asarray(label_npz["valid_mask"], dtype=bool)
+        else:
+            gt_mask = np.isfinite(gt_depth) & (gt_depth > 0.0)
+        gt_mask = gt_mask & np.isfinite(gt_depth) & (gt_depth > 0.0)
+
+    save_input_prediction_groundtruth_figures(
+        input_gray_u8=input_gray_u8,
+        prediction_m=np.asarray(d_hat, dtype=np.float32),
+        out_dir=out_dir,
+        ground_truth_m=gt_depth,
+        ground_truth_mask=gt_mask,
+    )
+    return pred_path
 
 
 def main() -> None:
@@ -97,6 +122,7 @@ def main() -> None:
             args.idx1,
             args.idx2,
             not args.no_vis,
+            args.label_path,
         )
         print(pred)
         return
@@ -123,6 +149,7 @@ def main() -> None:
             args.idx1,
             args.idx2,
             not args.no_vis,
+            row.get("label_path"),
         )
         rows_out.append({**row, "model": MODEL_SLUG, "prediction_path": str(pred)})
 

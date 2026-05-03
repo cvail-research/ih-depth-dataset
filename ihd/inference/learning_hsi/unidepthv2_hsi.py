@@ -12,6 +12,7 @@ from ihd.evaluation.model_io import (
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
     save_depth_prediction,
+    save_input_prediction_groundtruth_figures,
     scene_out_dir,
     write_prediction_manifest,
 )
@@ -105,110 +106,27 @@ def save_input_prediction_groundtruth_assets(
     out_dir: Path,
     label_path: str | None,
 ) -> None:
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-
     rgb, _ = load_pseudobroadband_rgb(hdr_path)
     gray = np.mean(rgb.astype(np.float32), axis=2)
     input_u8 = np.clip(gray, 0.0, 255.0).astype(np.uint8)
+    gt_depth = None
+    gt_mask = None
+    if label_path and Path(label_path).exists():
+        label_npz = np.load(label_path)
+        gt_depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
+        if "valid_mask" in label_npz:
+            gt_mask = np.asarray(label_npz["valid_mask"], dtype=bool)
+        else:
+            gt_mask = np.isfinite(gt_depth) & (gt_depth > 0.0)
+        gt_mask = gt_mask & np.isfinite(gt_depth) & (gt_depth > 0.0)
 
-    def _save_input_with_empty_colorbar(input_gray_u8: np.ndarray, out_path: Path) -> None:
-        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
-        ax.imshow(input_gray_u8, cmap="gray", aspect="auto")
-        ax.axis("off")
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="2.8%", pad=0.04)
-        cax.set_xticks([])
-        cax.set_yticks([])
-        cax.set_ylabel("Depth (m)", labelpad=12, color=(0, 0, 0, 0))
-        for spine in cax.spines.values():
-            spine.set_visible(False)
-        cax.patch.set_alpha(0.0)
-        fig.subplots_adjust(left=0.01, right=0.99, top=0.995, bottom=0.02)
-        fig.savefig(out_path, dpi=180, bbox_inches="tight", pad_inches=0.02)
-        plt.close(fig)
-
-    def _save_single_depth_with_tied_colorbar(depth_m: np.ndarray, out_path: Path, *, vmin: float | None = None, vmax: float | None = None) -> None:
-        depth = np.asarray(depth_m, dtype=np.float32)
-        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
-        im = ax.imshow(depth, cmap="viridis", vmin=vmin, vmax=vmax, aspect="auto")
-        ax.axis("off")
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="2.8%", pad=0.04)
-        cb = fig.colorbar(im, cax=cax)
-        cb.set_label("Depth (m)", labelpad=12)
-        fig.subplots_adjust(left=0.01, right=0.99, top=0.995, bottom=0.02)
-        fig.savefig(out_path, dpi=180, bbox_inches="tight", pad_inches=0.02)
-        plt.close(fig)
-
-    _save_input_with_empty_colorbar(input_u8, out_dir / "input.png")
-
-    if not label_path or not Path(label_path).exists():
-        _save_single_depth_with_tied_colorbar(prediction_m, out_dir / "prediction.png")
-        return
-
-    label_npz = np.load(label_path)
-    gt_depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
-    if "valid_mask" in label_npz:
-        gt_mask = np.asarray(label_npz["valid_mask"], dtype=bool)
-    else:
-        gt_mask = np.isfinite(gt_depth) & (gt_depth > 0.0)
-    gt_mask = gt_mask & np.isfinite(gt_depth) & (gt_depth > 0.0)
-    _save_single_depth_with_tied_colorbar(
-        prediction_m,
-        out_dir / "prediction.png",
-        vmin=float(np.nanmin(gt_depth[gt_mask])) if np.any(gt_mask) else None,
-        vmax=float(np.nanmax(gt_depth[gt_mask])) if np.any(gt_mask) else None,
+    save_input_prediction_groundtruth_figures(
+        input_gray_u8=input_u8,
+        prediction_m=prediction_m,
+        out_dir=out_dir,
+        ground_truth_m=gt_depth,
+        ground_truth_mask=gt_mask,
     )
-    _save_single_depth_with_tied_colorbar(
-        np.where(gt_mask, gt_depth, np.nan),
-        out_dir / "ground_truth.png",
-        vmin=float(np.nanmin(gt_depth[gt_mask])) if np.any(gt_mask) else None,
-        vmax=float(np.nanmax(gt_depth[gt_mask])) if np.any(gt_mask) else None,
-    )
-
-    finite_gt = gt_mask
-    if np.any(finite_gt):
-        vmin = float(np.nanmin(gt_depth[finite_gt]))
-        vmax = float(np.nanmax(gt_depth[finite_gt]))
-    else:
-        finite_pred = np.isfinite(prediction_m)
-        vmin = float(np.nanmin(prediction_m[finite_pred])) if np.any(finite_pred) else 0.0
-        vmax = float(np.nanmax(prediction_m[finite_pred])) if np.any(finite_pred) else 1.0
-
-    fig, axes = plt.subplots(3, 1, figsize=(14, 7))
-    axes[0].imshow(input_u8, cmap="gray", aspect="auto")
-    axes[0].set_title("Input")
-    im_pred = axes[1].imshow(prediction_m, cmap="viridis", vmin=vmin, vmax=vmax, aspect="auto")
-    axes[1].set_title("Prediction")
-    im_gt = axes[2].imshow(np.where(gt_mask, gt_depth, np.nan), cmap="viridis", vmin=vmin, vmax=vmax, aspect="auto")
-    axes[2].set_title("Ground Truth")
-    for ax in axes:
-        ax.axis("off")
-
-    # Keep symmetry: each row has a side colorbar axis with matching height.
-    div0 = make_axes_locatable(axes[0])
-    cax0 = div0.append_axes("right", size="2.8%", pad=0.04)
-    cax0.set_xticks([])
-    cax0.set_yticks([])
-    for spine in cax0.spines.values():
-        spine.set_visible(False)
-    cax0.patch.set_alpha(0.0)
-
-    div1 = make_axes_locatable(axes[1])
-    cax1 = div1.append_axes("right", size="2.8%", pad=0.04)
-    cb1 = fig.colorbar(im_pred, cax=cax1)
-    cb1.set_label("Depth (m)", labelpad=12)
-
-    div2 = make_axes_locatable(axes[2])
-    cax2 = div2.append_axes("right", size="2.8%", pad=0.04)
-    cb2 = fig.colorbar(im_gt, cax=cax2)
-    cb2.set_label("Depth (m)", labelpad=12)
-
-    # Compact panoramic layout: tighter vertical spacing.
-    fig.subplots_adjust(left=0.02, right=0.99, top=0.975, bottom=0.03, hspace=0.18)
-    fig.savefig(out_dir / "comparison_3x1.png", dpi=180, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
 
 
 def predict_hsi_tensor(
