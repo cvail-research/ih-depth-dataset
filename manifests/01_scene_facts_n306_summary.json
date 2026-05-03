@@ -1,0 +1,19 @@
+{
+  "benchmark_corresp_path_nonempty_count": 290,
+  "benchmark_cyl_path_nonempty_count": 274,
+  "bsq_path_nonempty_count": 292,
+  "fit_json_nonempty_count": 274,
+  "hdr_path_nonempty_count": 292,
+  "las_path_nonempty_count": 292,
+  "manual_picks_path_nonempty_count": 290,
+  "original_cyl_path_nonempty_count": 46,
+  "scene_count": 306,
+  "sensor_id_counts": {
+    "LWHSI1": 292,
+    "unknown": 14
+  },
+  "source_pool_counts": {
+    "with_prior_cyl": 60,
+    "without_prior_cyl": 246
+  }
+}
