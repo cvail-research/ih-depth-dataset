@@ -53,8 +53,8 @@ occlusion_filter_radius_px = int(os.environ["OCCLUSION_FILTER_RADIUS_PX"])
 occlusion_min_depth_gap_m = float(os.environ["OCCLUSION_MIN_DEPTH_GAP_M"])
 occlusion_min_depth_gap_ratio = float(os.environ["OCCLUSION_MIN_DEPTH_GAP_RATIO"])
 
-cleanup_rows = list(csv.DictReader((repo_root / "manifests/06_occlusion_cleanup_manifest_current.csv").open()))
-frozen_rows = list(csv.DictReader((repo_root / "manifests/07_frozen_manifest_v0.csv").open()))
+cleanup_rows = list(csv.DictReader((repo_root / "manifests/04_occlusion_cleanup_manifest_current.csv").open()))
+frozen_rows = list(csv.DictReader((repo_root / "manifests/06_frozen_manifest_v0.csv").open()))
 frozen_by_key = {(r["collection"], r["path"], r["step"]): r for r in frozen_rows}
 
 selected = []

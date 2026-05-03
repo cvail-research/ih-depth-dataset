@@ -23,7 +23,7 @@ from pathlib import Path
 import json
 import pandas as pd
 
-pool = pd.read_csv("manifests/02_without_prior_cyl_n246.csv")
+pool = pd.read_csv("manifests/archive/legacy_pool_manifests_v0/02_without_prior_cyl_n246.csv")
 raw = pd.read_csv("ihd/datasets/manifests/ihdataset_relevant_s3.csv")
 workspace = set()
 

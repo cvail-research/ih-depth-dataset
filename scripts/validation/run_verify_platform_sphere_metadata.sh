@@ -16,8 +16,8 @@ REPO_ROOT="${SLURM_SUBMIT_DIR}"
 cd "${REPO_ROOT}"
 export PYTHONUNBUFFERED=1
 
-SCENE_MANIFEST="${1:-manifests/05_scene_quality_manifest_current.csv}"
-METADATA_CSV="${2:-manifests/04_las_preprocessing_metadata_n4.csv}"
+SCENE_MANIFEST="${1:-manifests/03_scene_quality_manifest_current.csv}"
+METADATA_CSV="${2:-manifests/02_las_preprocessing_metadata_n4.csv}"
 OUT_CSV="${3:-analysis/lidar_preprocessing/platform_sphere_r4p0_metadata_verification.csv}"
 
 srun uv run python - <<'PY' "${SCENE_MANIFEST}" "${METADATA_CSV}" "${OUT_CSV}"

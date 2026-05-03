@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Prepare a Hugging Face dataset release package.")
     ap.add_argument(
         "--frozen-manifest",
-        default="manifests/07_frozen_manifest_v0.csv",
+        default="manifests/06_frozen_manifest_v0.csv",
         help="Frozen release manifest CSV.",
     )
     ap.add_argument(
@@ -143,8 +143,8 @@ def write_croissant(path: Path, df: pd.DataFrame, repo_id: str) -> None:
             {
                 "@type": "cr:FileObject",
                 "@id": file_object_id,
-                "name": "07_frozen_manifest_v0.csv",
-                "contentUrl": "07_frozen_manifest_v0.csv",
+                "name": "06_frozen_manifest_v0.csv",
+                "contentUrl": "06_frozen_manifest_v0.csv",
                 "encodingFormat": "text/csv",
             }
         ],
@@ -188,7 +188,7 @@ def main() -> None:
     legacy_hf_manifest = output_dir / "ih_depth_frozen_v0_hf_manifest.csv"
     if legacy_hf_manifest.exists():
         legacy_hf_manifest.unlink()
-    shutil.copyfile(frozen_path, output_dir / "07_frozen_manifest_v0.csv")
+    shutil.copyfile(frozen_path, output_dir / "06_frozen_manifest_v0.csv")
     legacy_croissant = output_dir / "croissant_v0.jsonld"
     if legacy_croissant.exists():
         legacy_croissant.unlink()

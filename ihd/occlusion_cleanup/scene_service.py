@@ -17,8 +17,8 @@ from ihd.annotation_workspace.scene_service import save_overlay
 
 
 WORKSPACE_ROOT_CLEANUP = REPO_ROOT / "analysis" / "occlusion_cleanup_workspace"
-OCCLUSION_CLEANUP_MANIFEST = REPO_ROOT / "manifests" / "06_occlusion_cleanup_manifest_current.csv"
-OCCLUSION_CLEANUP_SUMMARY = REPO_ROOT / "manifests" / "06_occlusion_cleanup_manifest_current_summary.json"
+OCCLUSION_CLEANUP_MANIFEST = REPO_ROOT / "manifests" / "04_occlusion_cleanup_manifest_current.csv"
+OCCLUSION_CLEANUP_SUMMARY = REPO_ROOT / "manifests" / "04_occlusion_cleanup_manifest_current_summary.json"
 
 
 def _normalize_path_name(path_name: str) -> str:

@@ -22,7 +22,7 @@ mkdir -p logs/out logs/err analysis/lidar_preprocessing
 
 COLLECTION_FILTER="${1:-.*}"
 PATH_FILTER="${2:-.*}"
-METADATA_CSV="${3:-manifests/04_las_preprocessing_metadata_n4.csv}"
+METADATA_CSV="${3:-manifests/02_las_preprocessing_metadata_n4.csv}"
 PROFILE="projection_platform_sphere_r4p0_voxel0p03_sor50_2p0"
 SUFFIX="platform_sphere_r4p0"
 SCENE_MANIFEST="analysis/lidar_preprocessing/${SUFFIX}_batch_scenes.tsv"

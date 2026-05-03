@@ -16,7 +16,7 @@ export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 mkdir -p logs/out logs/err
 
 MODEL="${1:?Usage: sbatch $0 <model> [scene_manifest] [device] [out_root]}"
-SCENE_MANIFEST="${2:-manifests/07_frozen_manifest_v0.csv}"
+SCENE_MANIFEST="${2:-manifests/06_frozen_manifest_v0.csv}"
 DEVICE="${3:-cuda}"
 OUT_ROOT="${4:-analysis/evaluation/baseline_predictions_full}"
 mkdir -p "${OUT_ROOT}"

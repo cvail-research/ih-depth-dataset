@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import spectral as spy
 
 
 GOOD_VERDICT = "good"
@@ -16,23 +18,28 @@ BAD_VERDICT = "bad"
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Build the frozen IH-Depth v0 manifest.")
     ap.add_argument(
+        "--scene-facts-manifest",
+        default="manifests/01_scene_facts_n306.csv",
+        help="Factual scene manifest with source paths and annotation artifacts.",
+    )
+    ap.add_argument(
         "--quality-manifest",
-        default="manifests/05_scene_quality_manifest_current.csv",
+        default="manifests/03_scene_quality_manifest_current.csv",
         help="Current scene quality manifest CSV.",
     )
     ap.add_argument(
         "--cleanup-manifest",
-        default="manifests/06_occlusion_cleanup_manifest_current.csv",
+        default="manifests/04_occlusion_cleanup_manifest_current.csv",
         help="Current occlusion cleanup manifest CSV.",
     )
     ap.add_argument(
         "--output-csv",
-        default="manifests/07_frozen_manifest_v0.csv",
+        default="manifests/06_frozen_manifest_v0.csv",
         help="Frozen manifest CSV to write.",
     )
     ap.add_argument(
         "--output-summary-json",
-        default="manifests/07_frozen_manifest_v0_summary.json",
+        default="manifests/06_frozen_manifest_v0_summary.json",
         help="Summary JSON to write.",
     )
     ap.add_argument(
@@ -42,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument(
         "--scene-spot-mapping",
-        default="manifests/scene_spot_mapping_v0.csv",
+        default="manifests/05_scene_spot_mapping_v0.csv",
         help="Optional manual path-to-scene-spot mapping CSV.",
     )
     return ap.parse_args()
@@ -72,6 +79,34 @@ def normalized_text(value: Any) -> str:
 
 def projected_depth_label_path(depth_label_root: Path, row: pd.Series) -> Path:
     return depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
+
+
+def infer_sensor_metadata(hdr_path: str | None) -> tuple[str | None, int | None]:
+    if hdr_path is None or pd.isna(hdr_path) or str(hdr_path).strip() == "":
+        return None, None
+
+    path = Path(hdr_path)
+    name = path.name.upper()
+    sensor_id: str | None = None
+    if "LWHSI1" in name:
+        sensor_id = "LWHSI1"
+    elif "LWHSI2" in name:
+        sensor_id = "LWHSI2"
+
+    sensor_num_bands: int | None = None
+    if path.exists():
+        try:
+            img = spy.open_image(str(path))
+            sensor_num_bands = int(len(img.metadata.get("wavelength", [])))
+            if sensor_id is None:
+                if sensor_num_bands == 256:
+                    sensor_id = "LWHSI1"
+                elif sensor_num_bands == 250:
+                    sensor_id = "LWHSI2"
+        except Exception:
+            pass
+
+    return sensor_id, sensor_num_bands
 
 
 def scene_spot_id_default(row: pd.Series) -> str:
@@ -135,21 +170,32 @@ def prediction_exclusion_reason_current(row: pd.Series) -> str | None:
 
 
 def merge_quality_and_cleanup(
+    scene_facts: pd.DataFrame,
     quality: pd.DataFrame,
     cleanup: pd.DataFrame,
     depth_label_root: Path,
     scene_spot_mapping: Path,
 ) -> pd.DataFrame:
+    scene_facts = scene_facts.copy()
     quality = quality.copy()
     cleanup = cleanup.copy()
 
+    scene_facts["join_key"] = scene_facts.apply(
+        lambda row: scene_join_key(str(row["collection"]).strip(), str(row["path"]).strip(), str(row["step"]).strip()),
+        axis=1,
+    )
     quality["join_key"] = quality.apply(
         lambda row: scene_join_key(str(row["collection"]).strip(), str(row["path"]).strip(), str(row["step"]).strip()),
         axis=1,
     )
     cleanup["join_key"] = cleanup.apply(cleanup_join_key, axis=1)
 
-    merged = quality.merge(
+    merged = scene_facts.merge(
+        quality,
+        on="join_key",
+        how="left",
+        suffixes=("", "_quality"),
+    ).merge(
         cleanup[
             [
                 "join_key",
@@ -179,6 +225,25 @@ def merge_quality_and_cleanup(
 
     merged["cleanup_status"] = merged["cleanup_status"].fillna("not_reviewed")
     merged["cleanup_region_count"] = merged["cleanup_region_count"].fillna(0).astype(int)
+    if "scene_quality" in merged.columns:
+        merged["scene"] = merged["scene_quality"].fillna(merged["scene"])
+    if "source_pool_quality" in merged.columns:
+        merged["source_pool"] = merged["source_pool"].fillna(merged["source_pool_quality"])
+    for column in [
+        "has_session_json",
+        "has_fit_json",
+        "fit_ready",
+        "annotation_status",
+        "fit_rmse_total_px",
+        "num_picked_pairs",
+        "fit_json",
+        "session_json",
+    ]:
+        quality_column = f"{column}_quality"
+        if quality_column in merged.columns and column in merged.columns:
+            merged[column] = merged[column].where(merged[column].notna(), merged[quality_column])
+        elif quality_column in merged.columns:
+            merged[column] = merged[f"{column}_quality"]
 
     merged["release_decision"] = merged.apply(determine_release_decision, axis=1)
     merged["release_reason"] = merged.apply(determine_release_reason, axis=1)
@@ -193,6 +258,13 @@ def merge_quality_and_cleanup(
         lambda row: str(projected_depth_label_path(depth_label_root, row)),
         axis=1,
     )
+    if "benchmark_corresp_path" in merged.columns:
+        merged["corresp_path"] = merged["benchmark_corresp_path"]
+    if "benchmark_cyl_path" in merged.columns:
+        merged["cyl_path"] = merged["benchmark_cyl_path"]
+    sensor_meta = merged["hdr_path"].map(infer_sensor_metadata)
+    merged["sensor_id"] = sensor_meta.map(lambda x: x[0])
+    merged["sensor_num_bands"] = sensor_meta.map(lambda x: x[1])
     merged["prediction_ready_current"] = merged["projected_depth_label_path_current"].map(lambda p: Path(p).exists())
     merged["prediction_exclusion_reason_current"] = merged.apply(prediction_exclusion_reason_current, axis=1)
     merged["has_cleanup_review"] = merged["cleanup_status"] != "not_reviewed"
@@ -280,6 +352,13 @@ def merge_quality_and_cleanup(
         "qc_vote_bad",
         "qc_mean_seconds",
         "qc_notes",
+        "sensor_id",
+        "sensor_num_bands",
+        "original_corresp_path",
+        "original_cyl_path",
+        "manual_picks_path",
+        "benchmark_corresp_path",
+        "benchmark_cyl_path",
         "corresp_path",
         "cyl_path",
         "hdr_path",
@@ -354,6 +433,10 @@ def determine_release_reason(row: pd.Series) -> str | None:
 def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path, depth_label_root: Path) -> dict:
     release_counts = df["release_decision"].value_counts(dropna=False).to_dict()
     cleanup_counts = df["cleanup_status"].value_counts(dropna=False).to_dict()
+    sensor_id_counts = {str(k): int(v) for k, v in df["sensor_id"].fillna("unknown").value_counts(dropna=False).to_dict().items()}
+    sensor_num_bands_counts = {
+        str(k): int(v) for k, v in df["sensor_num_bands"].fillna("unknown").value_counts(dropna=False).to_dict().items()
+    }
     return {
         "frozen_manifest_version": "v0",
         "quality_manifest": str(quality_path),
@@ -376,11 +459,14 @@ def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path, dept
         "prediction_ready_current_count": int(df["prediction_ready_current"].sum()),
         "prediction_not_ready_current_count": int((~df["prediction_ready_current"]).sum()),
         "prediction_exclusion_reason_current_counts": df["prediction_exclusion_reason_current"].fillna("prediction_ready").value_counts(dropna=False).to_dict(),
+        "sensor_id_counts": sensor_id_counts,
+        "sensor_num_bands_counts": sensor_num_bands_counts,
     }
 
 
 def main() -> None:
     args = parse_args()
+    scene_facts_path = Path(args.scene_facts_manifest)
     quality_path = Path(args.quality_manifest)
     cleanup_path = Path(args.cleanup_manifest)
     output_csv = Path(args.output_csv)
@@ -388,9 +474,10 @@ def main() -> None:
     depth_label_root = Path(args.depth_label_root)
     scene_spot_mapping = Path(args.scene_spot_mapping)
 
+    scene_facts = load_csv(scene_facts_path)
     quality = load_csv(quality_path)
     cleanup = load_csv(cleanup_path)
-    frozen = merge_quality_and_cleanup(quality, cleanup, depth_label_root, scene_spot_mapping)
+    frozen = merge_quality_and_cleanup(scene_facts, quality, cleanup, depth_label_root, scene_spot_mapping)
     summary = build_summary(frozen, quality_path, cleanup_path, depth_label_root)
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)

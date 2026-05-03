@@ -1,6 +1,6 @@
 {
   "candidate_count": 74,
-  "cleanup_manifest": "manifests/06_occlusion_cleanup_manifest_current.csv",
+  "cleanup_manifest": "manifests/04_occlusion_cleanup_manifest_current.csv",
   "cleanup_reviewed_count": 12,
   "cleanup_status_counts": {
     "not_reviewed": 294,
@@ -25,7 +25,7 @@
   },
   "prediction_not_ready_current_count": 32,
   "prediction_ready_current_count": 274,
-  "quality_manifest": "manifests/05_scene_quality_manifest_current.csv",
+  "quality_manifest": "manifests/03_scene_quality_manifest_current.csv",
   "quant_gate_pass_count": 51,
   "registration_provenance_current_counts": {
     "legacy_prior_pool_no_ours_fit": 16,
@@ -83,5 +83,13 @@
     "spot_035": 7,
     "spot_038": 9,
     "spot_041": 23
+  },
+  "sensor_id_counts": {
+    "LWHSI1": 292,
+    "unknown": 14
+  },
+  "sensor_num_bands_counts": {
+    "256.0": 292,
+    "unknown": 14
   }
 }

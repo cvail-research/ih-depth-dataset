@@ -2,7 +2,7 @@
   "cleanup_status_counts": {
     "previewed": 12
   },
-  "manifest_path": "/home/guille/ih-depth-dataset/manifests/06_occlusion_cleanup_manifest_current.csv",
+  "manifest_path": "/home/guille/ih-depth-dataset/manifests/04_occlusion_cleanup_manifest_current.csv",
   "mean_kept_points": 670120.5833333334,
   "mean_removed_points": 133776.0,
   "scene_count": 12,

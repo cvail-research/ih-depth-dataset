@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-SCENE_MANIFEST="${1:-manifests/07_frozen_manifest_v0.csv}"
+SCENE_MANIFEST="${1:-manifests/06_frozen_manifest_v0.csv}"
 OUT_ROOT="${2:-analysis/evaluation/baseline_predictions_full}"
 
 mkdir -p logs/out logs/err "${OUT_ROOT}"
