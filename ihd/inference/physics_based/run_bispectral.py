@@ -4,26 +4,21 @@ Bispectral baseline for distance (d) estimation on LWIR HSI.
 Direct translation of bispectral_estimation.m.
 
 Typical usage:
-  python baselines/physics-based/precompute_attenuation.py
-  python baselines/physics-based/run_bispectral.py --hsi-hdr <scene.hdr> --lidar-mat baselines/physics-based/data/lidar.mat
+  python ihd/inference/physics_based/precompute_attenuation.py
+  python ihd/inference/physics_based/run_bispectral.py --hsi-hdr <scene.hdr> --lidar-mat ihd/inference/physics_based/data/lidar.mat
 """
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-	sys.path.insert(0, str(HERE))
-
-from utils.io_utils import load_lidar, load_scene
-from utils.metrics import evaluate, save_results
-from utils.physics import blackbody, estimate_T_air
-from utils.vis import save_distance_png, save_error_png
+from ihd.evaluation.model_io import save_depth_prediction
+from ihd.inference.physics_based.utils.io_utils import load_lidar, load_scene
+from ihd.inference.physics_based.utils.physics import blackbody, estimate_T_air
+from ihd.inference.physics_based.utils.vis import save_distance_png, save_error_png
 
 
 def _pick_bands(lambda_um: np.ndarray, attenuation: np.ndarray, lambda_min: float, lambda_max: float) -> tuple[int, int]:
@@ -76,15 +71,15 @@ def parse_args() -> argparse.Namespace:
 	here = Path(__file__).resolve().parent
 	default_data = here / "data"
 	p.add_argument("--hsi-hdr", type=Path, required=True, help="Path to the scene .hdr")
-	p.add_argument("--lidar-mat", type=Path, default=None, help="Path to lidar.mat (optional, for evaluation)")
-	p.add_argument("--data-dir", type=Path, default=default_data, help="Data directory (default: baselines/.../data)")
+	p.add_argument("--lidar-mat", type=Path, default=None, help="Path to lidar.mat (optional, only for error visualization)")
+	p.add_argument("--data-dir", type=Path, default=default_data, help="Data directory (default: ihd/inference/physics_based/data)")
 	p.add_argument("--out-dir", type=Path, default=here / "outputs", help="Output directory")
 	p.add_argument("--t-air", type=float, default=None, help="Set T_air manually (K). If omitted, it is estimated")
 	p.add_argument("--lambda-min", type=float, default=8.5, help="Range for automatic band selection")
 	p.add_argument("--lambda-max", type=float, default=12.0, help="Range for automatic band selection")
 	p.add_argument("--idx1", type=int, default=None, help="Band index 1 (absorption)")
 	p.add_argument("--idx2", type=int, default=None, help="Band index 2 (clear)")
-	p.add_argument("--save-npy", action="store_true", help="Save d_hat as .npy")
+	p.add_argument("--save-npy", action="store_true", help="Also save legacy d_hat as .npy")
 	p.add_argument("--save-fig", action="store_true", help="Save a PNG visualization of d_hat")
 	return p.parse_args()
 
@@ -119,6 +114,26 @@ def main() -> None:
 	scene_name = args.hsi_hdr.stem
 	method = f"bispectral_{sensor}"
 
+	metadata = {
+		"model_slug": "bispectral",
+		"method_name": method,
+		"sensor": sensor,
+		"t_air_k": float(T_air),
+		"idx1": int(idx1),
+		"idx2": int(idx2),
+		"lambda_idx1_um": float(lambda_um[idx1]),
+		"lambda_idx2_um": float(lambda_um[idx2]),
+	}
+	out_npz = save_depth_prediction(
+		d_hat.astype(np.float32),
+		out_dir,
+		model_name=method,
+		hdr_path=args.hsi_hdr,
+		metadata=metadata,
+		save_visualization=bool(args.save_fig),
+	)
+	print(f"  Saved: {out_npz}")
+
 	if args.save_npy:
 		out_npy = out_dir / f"{scene_name}_{method}_d.npy"
 		np.save(out_npy, d_hat.astype(np.float32))
@@ -137,8 +152,6 @@ def main() -> None:
 			out_err_png = out_dir / f"{scene_name}_{method}_error.png"
 			save_error_png(d_hat, gt, out_err_png, title=f"{scene_name} | {method} | error")
 			print(f"  Saved: {out_err_png}")
-		results = evaluate(d_hat, gt, method_name=method, verbose=True)
-		save_results(results, str(out_dir), scene_name, method)
 
 
 if __name__ == "__main__":

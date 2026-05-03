@@ -23,10 +23,13 @@ DEFAULT_REPO_ROOT='/home/malurool/ih-depth-dataset'
 # Set this to the lidar.mat registered to your HSI scene.
 DEFAULT_LIDAR_MAT=''
 
-# If 1, fail the job if lidar is missing. Set to 0 to run without metrics.
-REQUIRE_LIDAR_METRICS=0
+# Optional: sparse label .npz used by ihd.evaluation.evaluate_depth_prediction.
+DEFAULT_LABEL_NPZ=''
 
-# If 1, save a PNG visualization to baselines/physics-based/outputs.
+# If 1, fail the job if label is missing. Set to 0 to run prediction-only.
+REQUIRE_LABEL_METRICS=1
+
+# If 1, save a PNG visualization to ihd/inference/physics_based/outputs.
 SAVE_FIG=1
 
 if [ "$#" -eq 1 ]; then
@@ -59,50 +62,70 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 cd "$REPO_ROOT"
 
-if [ ! -f "baselines/physics-based/precompute_attenuation.py" ]; then
+if [ ! -f "ihd/inference/physics_based/precompute_attenuation.py" ]; then
   echo "Repo root does not look correct: $REPO_ROOT" >&2
-  echo "Missing: baselines/physics-based/precompute_attenuation.py" >&2
+  echo "Missing: ihd/inference/physics_based/precompute_attenuation.py" >&2
   echo "Fix: run sbatch from the repo root, or set IHD_REPO_ROOT=/path/to/ih-depth-dataset" >&2
   exit 2
 fi
 
 export PYTHONUNBUFFERED=1
 
-DATA_DIR="baselines/physics-based/data"
+DATA_DIR="ihd/inference/physics_based/data"
 PRECOMP_DIR="$DATA_DIR/precomputed"
+OUT_ROOT="${OUT_ROOT:-analysis/evaluation/physics_based_predictions}"
+MODEL_SLUG="bispectral"
+SCENE_NAME="$(basename "${HDR}" .hdr)"
+PRED_DIR="${OUT_ROOT}/${MODEL_SLUG}/${SCENE_NAME}"
+PRED_PATH="${PRED_DIR}/depth_prediction.npz"
 
 if [ ! -f "$PRECOMP_DIR/attenuation_LWHSI1.npy" ] || [ ! -f "$PRECOMP_DIR/attenuation_LWHSI2.npy" ]; then
-  python baselines/physics-based/precompute_attenuation.py --data-dir "$DATA_DIR"
+  python ihd/inference/physics_based/precompute_attenuation.py --data-dir "$DATA_DIR"
 fi
 
+LABEL_NPZ_PATH="${LABEL_NPZ:-${DEFAULT_LABEL_NPZ:-}}"
+# Retained for backward compatibility (optional manual diagnostics).
 LIDAR_MAT_PATH="${LIDAR_MAT:-${DEFAULT_LIDAR_MAT:-}}"
-LIDAR_ARGS=()
-
-if [ "${REQUIRE_LIDAR_METRICS}" -eq 1 ]; then
-  if [ -z "${LIDAR_MAT_PATH}" ]; then
-    echo "Metrics requested but no lidar file was configured." >&2
-    echo "Fix: set DEFAULT_LIDAR_MAT inside this script, or export LIDAR_MAT='/path/to/lidar.mat'." >&2
-    echo "To run without metrics, set REQUIRE_LIDAR_METRICS=0." >&2
-    exit 3
-  fi
-  if [ ! -f "${LIDAR_MAT_PATH}" ]; then
-    echo "Lidar file not found (required for metrics): ${LIDAR_MAT_PATH}" >&2
-    exit 3
-  fi
-  LIDAR_ARGS=(--lidar-mat "${LIDAR_MAT_PATH}")
-else
-  if [ -n "${LIDAR_MAT_PATH}" ]; then
-    if [ -f "${LIDAR_MAT_PATH}" ]; then
-      LIDAR_ARGS=(--lidar-mat "${LIDAR_MAT_PATH}")
-    else
-      echo "Lidar file not found (metrics disabled): ${LIDAR_MAT_PATH}" >&2
-    fi
-  fi
-fi
 
 FIG_ARGS=()
 if [ "${SAVE_FIG}" -eq 1 ]; then
-  FIG_ARGS=(--save-fig)
+  FIG_ARGS=()
+else
+  FIG_ARGS=(--no-vis)
 fi
 
-python baselines/physics-based/run_bispectral.py --hsi-hdr "$HDR" --data-dir "$DATA_DIR" --save-npy "${FIG_ARGS[@]}" "${LIDAR_ARGS[@]}"
+scripts/evaluation/run_predict_bispectral.sh \
+  --hdr "$HDR" \
+  --data-dir "$DATA_DIR" \
+  --out-dir "$PRED_DIR" \
+  "${FIG_ARGS[@]}"
+
+if [ "${REQUIRE_LABEL_METRICS}" -eq 1 ]; then
+  if [ -z "${LABEL_NPZ_PATH}" ]; then
+    echo "Metrics requested but no label .npz was configured." >&2
+    echo "Fix: set DEFAULT_LABEL_NPZ in this script, or export LABEL_NPZ='/path/to/projected_lidar_depth_label.npz'." >&2
+    echo "To run without metrics, set REQUIRE_LABEL_METRICS=0." >&2
+    exit 3
+  fi
+  if [ ! -f "${LABEL_NPZ_PATH}" ]; then
+    echo "Label file not found (required for metrics): ${LABEL_NPZ_PATH}" >&2
+    exit 3
+  fi
+  scripts/evaluation/run_evaluate_depth_prediction.sh \
+    --prediction "$PRED_PATH" \
+    --label "$LABEL_NPZ_PATH" \
+    --out-json "${PRED_DIR}/metrics_summary.json" \
+    --out-csv "${PRED_DIR}/metrics_per_scene.csv"
+  echo "Metrics saved to: ${PRED_DIR}/metrics_summary.json and ${PRED_DIR}/metrics_per_scene.csv"
+else
+  if [ -n "${LABEL_NPZ_PATH}" ] && [ -f "${LABEL_NPZ_PATH}" ]; then
+    scripts/evaluation/run_evaluate_depth_prediction.sh \
+      --prediction "$PRED_PATH" \
+      --label "$LABEL_NPZ_PATH" \
+      --out-json "${PRED_DIR}/metrics_summary.json" \
+      --out-csv "${PRED_DIR}/metrics_per_scene.csv"
+    echo "Metrics saved to: ${PRED_DIR}/metrics_summary.json and ${PRED_DIR}/metrics_per_scene.csv"
+  else
+    echo "Prediction generated at ${PRED_PATH} (evaluation skipped)."
+  fi
+fi

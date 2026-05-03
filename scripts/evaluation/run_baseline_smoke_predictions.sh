@@ -18,7 +18,7 @@ mkdir -p logs/out logs/err
 SCENE_MANIFEST="${1:-analysis/qc_review/reproducible_qc_report/scenes_accepted_by_rmse5px_distance_5pct_with_drop_rule.csv}"
 LIMIT="${2:-3}"
 OUT_ROOT="${3:-analysis/evaluation/baseline_smoke_predictions}"
-MODELS_CSV="${4:-unik3d,unidepthv2,depthanythingv2,depthpro}"
+MODELS_CSV="${4:-unik3d,unidepthv2,depthanythingv2,depthpro,bispectral}"
 
 INPUT_MANIFEST="${OUT_ROOT}/prediction_inputs.csv"
 mkdir -p "${OUT_ROOT}"
@@ -60,6 +60,9 @@ for MODEL in "${MODELS[@]}"; do
       else
         scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       fi
+      ;;
+    bispectral)
+      scripts/evaluation/run_predict_bispectral.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       ;;
     *)
       echo "Unknown model: ${MODEL}" >&2

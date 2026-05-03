@@ -26,7 +26,7 @@ DEFAULT_LIDAR_MAT=''
 # If 1, fail the job if lidar is missing. Set to 0 to run without metrics.
 REQUIRE_LIDAR_METRICS=1
 
-# If 1, save a PNG visualization to baselines/physics-based/outputs.
+# If 1, save a PNG visualization to ihd/inference/physics_based/outputs.
 SAVE_FIG=1
 
 if [ "$#" -eq 1 ]; then
@@ -59,20 +59,20 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 cd "$REPO_ROOT"
 
-if [ ! -f "baselines/physics-based/precompute_attenuation.py" ]; then
+if [ ! -f "ihd/inference/physics_based/precompute_attenuation.py" ]; then
   echo "Repo root does not look correct: $REPO_ROOT" >&2
-  echo "Missing: baselines/physics-based/precompute_attenuation.py" >&2
+  echo "Missing: ihd/inference/physics_based/precompute_attenuation.py" >&2
   echo "Fix: run sbatch from the repo root, or set IHD_REPO_ROOT=/path/to/ih-depth-dataset" >&2
   exit 2
 fi
 
 export PYTHONUNBUFFERED=1
 
-DATA_DIR="baselines/physics-based/data"
+DATA_DIR="ihd/inference/physics_based/data"
 PRECOMP_DIR="$DATA_DIR/precomputed"
 
 if [ ! -f "$PRECOMP_DIR/attenuation_LWHSI1.npy" ] || [ ! -f "$PRECOMP_DIR/attenuation_LWHSI2.npy" ]; then
-  python baselines/physics-based/precompute_attenuation.py --data-dir "$DATA_DIR"
+  python ihd/inference/physics_based/precompute_attenuation.py --data-dir "$DATA_DIR"
 fi
 
 LIDAR_MAT_PATH="${LIDAR_MAT:-${DEFAULT_LIDAR_MAT:-}}"
@@ -105,4 +105,4 @@ if [ "${SAVE_FIG}" -eq 1 ]; then
   FIG_ARGS=(--save-fig)
 fi
 
-python baselines/physics-based/run_hyperspectral.py --hsi-hdr "$HDR" --data-dir "$DATA_DIR" --save-npy "${FIG_ARGS[@]}" "${LIDAR_ARGS[@]}"
+python ihd/inference/physics_based/run_hyperspectral.py --hsi-hdr "$HDR" --data-dir "$DATA_DIR" --save-npy "${FIG_ARGS[@]}" "${LIDAR_ARGS[@]}"

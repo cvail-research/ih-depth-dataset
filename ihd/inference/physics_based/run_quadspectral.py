@@ -8,18 +8,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-	sys.path.insert(0, str(HERE))
-
-from utils.io_utils import load_lidar, load_scene
-from utils.metrics import evaluate, save_results
-from utils.physics import blackbody, estimate_T_air
-from utils.vis import save_distance_png, save_error_png
+from ihd.inference.physics_based.utils.io_utils import load_lidar, load_scene
+from ihd.inference.physics_based.utils.metrics import evaluate, save_results
+from ihd.inference.physics_based.utils.physics import blackbody, estimate_T_air
+from ihd.inference.physics_based.utils.vis import save_distance_png, save_error_png
 
 
 def _nearest_idx(lambda_um: np.ndarray, target_um: float) -> int:

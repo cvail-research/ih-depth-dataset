@@ -9,7 +9,7 @@ import numpy as np
 import scipy.io as sio
 import spectral as spy
 
-from utils.spectral import adjust_spectral_data, detect_sensor
+from ihd.inference.physics_based.utils.spectral import adjust_spectral_data, detect_sensor
  
  
 # ── per-sensor file mapping ─────────────────────────────────────────────────-

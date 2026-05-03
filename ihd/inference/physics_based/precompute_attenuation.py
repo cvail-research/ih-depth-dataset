@@ -13,17 +13,11 @@ ensure an exact match to the wavelength grid expected by each sensor.
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
-import sys
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
-
-from utils.spectral import precompute_attenuation
+from ihd.inference.physics_based.utils.spectral import precompute_attenuation
 
 
 DOWNWELLING_FILES = {

@@ -50,6 +50,9 @@ case "${MODEL}" in
       scripts/evaluation/run_predict_depthpro.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --device "${DEVICE}" --no-vis
     fi
     ;;
+  bispectral)
+    scripts/evaluation/run_predict_bispectral.sh --scene-manifest "${SCENE_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+    ;;
   *)
     echo "Unknown model: ${MODEL}" >&2
     exit 2

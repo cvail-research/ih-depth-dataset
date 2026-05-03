@@ -51,3 +51,13 @@ sbatch --job-name=ih_pred_unik3d \
   --mem=12G \
   --partition=prod \
   scripts/evaluation/run_one_baseline_model_predictions.sh unik3d "${SCENE_MANIFEST}" cpu "${OUT_ROOT}"
+
+sbatch --job-name=ih_pred_bispectral \
+  --output=logs/out/%j_ih_pred_bispectral.out \
+  --error=logs/err/%j_ih_pred_bispectral.err \
+  --time=24:00:00 \
+  --ntasks=1 \
+  --cpus-per-task=4 \
+  --mem=12G \
+  --partition=prod \
+  scripts/evaluation/run_one_baseline_model_predictions.sh bispectral "${SCENE_MANIFEST}" cpu "${OUT_ROOT}"

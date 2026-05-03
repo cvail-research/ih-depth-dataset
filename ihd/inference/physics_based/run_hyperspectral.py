@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 import torch
@@ -22,14 +21,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Function
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
-
-from utils.io_utils import load_lidar, load_scene
-from utils.metrics import evaluate, save_results
-from utils.physics import estimate_T_air
-from utils.vis import save_distance_png, save_error_png
+from ihd.inference.physics_based.utils.io_utils import load_lidar, load_scene
+from ihd.inference.physics_based.utils.metrics import evaluate, save_results
+from ihd.inference.physics_based.utils.physics import estimate_T_air
+from ihd.inference.physics_based.utils.vis import save_distance_png, save_error_png
 
 V_mean = .0
 T_mean = 300
