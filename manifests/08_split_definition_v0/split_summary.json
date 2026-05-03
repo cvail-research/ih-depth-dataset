@@ -14,7 +14,7 @@
     "train": 12
   },
   "split_scene_counts": {
-    "test": 10,
-    "train": 40
+    "test": 9,
+    "train": 41
   }
 }
