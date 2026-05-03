@@ -265,6 +265,8 @@ def merge_quality_and_cleanup(
         "raw_overlay",
         "cleanup_overlay",
         "updated_at",
+        "manual_release_decision",
+        "manual_release_reason",
         "fit_json",
         "session_json",
         "projected_depth_label_path_current",
@@ -294,6 +296,12 @@ def merge_quality_and_cleanup(
 
 
 def determine_release_decision(row: pd.Series) -> str:
+    manual_decision = normalized_text(row.get("manual_release_decision", ""))
+    if manual_decision:
+        if manual_decision.lower() not in {"include", "defer", "exclude"}:
+            raise ValueError(f"Invalid manual_release_decision value: {manual_decision}")
+        return manual_decision.lower()
+
     verdict = str(row.get("verdict", "")).strip().lower()
     if verdict == BAD_VERDICT:
         return "exclude"
@@ -315,6 +323,13 @@ def determine_release_decision(row: pd.Series) -> str:
 
 
 def determine_release_reason(row: pd.Series) -> str | None:
+    manual_reason = normalized_text(row.get("manual_release_reason", ""))
+    manual_decision = normalized_text(row.get("manual_release_decision", ""))
+    if manual_decision:
+        if manual_reason:
+            return manual_reason
+        return f"manual release decision: {manual_decision.lower()}"
+
     verdict = str(row.get("verdict", "")).strip().lower()
     if verdict == BAD_VERDICT:
         return "qc verdict bad"

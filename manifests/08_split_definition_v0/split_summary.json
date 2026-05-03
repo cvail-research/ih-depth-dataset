@@ -6,15 +6,15 @@
     "IHTest_202108_DistStA",
     "IHTest_202204_DistStA-20221110"
   ],
-  "hardness_available_scenes": 49,
-  "num_groups": 16,
-  "num_scenes": 49,
+  "hardness_available_scenes": 50,
+  "num_groups": 17,
+  "num_scenes": 50,
   "split_group_counts": {
     "test": 4,
-    "train": 12
+    "train": 13
   },
   "split_scene_counts": {
-    "test": 8,
-    "train": 41
+    "test": 6,
+    "train": 44
   }
 }
