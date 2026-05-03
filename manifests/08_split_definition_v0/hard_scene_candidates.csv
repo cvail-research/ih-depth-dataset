@@ -1,6 +1,5 @@
 scene_id_for_split,split_group,hardness_mean,hardness_std,hardness_num_models,hardness_ambiguous_for_review
 IHTest_202104_DistStA / path1 / path1_step0,spot_001,0.8410552696614326,0.0282052790078443,2,False
-IHTest_202204_DistStA-20221110 / path7 / path7_step8,spot_038,0.7729707902759507,0.0518895244338199,2,False
 IHTest_202204_DistStA-20221110 / path28 / path28_step11,spot_023,0.7545544820165562,0.0489879072724299,2,False
 IHTest_202204_DistStA-20221110 / path15 / path15_step1,spot_018,0.6702451737441563,0.008902186183355,2,False
 IHTest_202204_DistStA-20221110 / path7 / path7_step3,spot_038,0.6384632436963424,0.1509710241506646,2,True

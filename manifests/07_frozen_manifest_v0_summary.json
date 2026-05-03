@@ -1,18 +1,18 @@
 {
   "candidate_count": 74,
   "cleanup_manifest": "manifests/06_occlusion_cleanup_manifest_current.csv",
-  "cleanup_reviewed_count": 9,
+  "cleanup_reviewed_count": 10,
   "cleanup_status_counts": {
-    "not_reviewed": 297,
-    "previewed": 9
+    "not_reviewed": 296,
+    "previewed": 10
   },
-  "defer_count": 204,
+  "defer_count": 205,
   "depth_label_root": "analysis/depth_labels/platform_sphere_r4p0",
   "exclude_count": 52,
   "frozen_manifest_version": "v0",
   "good_and_candidate_count": 51,
   "good_count": 118,
-  "include_count": 50,
+  "include_count": 49,
   "legacy_source_pool_counts": {
     "with_prior_cyl": 60,
     "without_prior_cyl": 246
@@ -34,9 +34,9 @@
     "skipped_before_annotation_lwhsi_artifacts": 1
   },
   "release_decision_counts": {
-    "defer": 204,
+    "defer": 205,
     "exclude": 52,
-    "include": 50
+    "include": 49
   },
   "scene_count": 306,
   "scene_spot_id_counts": {
