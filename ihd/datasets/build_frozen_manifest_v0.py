@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -39,6 +40,11 @@ def parse_args() -> argparse.Namespace:
         default="analysis/depth_labels/platform_sphere_r4p0",
         help="Depth-label root used to determine prediction readiness.",
     )
+    ap.add_argument(
+        "--scene-spot-mapping",
+        default="manifests/scene_spot_mapping_v0.csv",
+        help="Optional manual path-to-scene-spot mapping CSV.",
+    )
     return ap.parse_args()
 
 
@@ -66,6 +72,32 @@ def normalized_text(value: Any) -> str:
 
 def projected_depth_label_path(depth_label_root: Path, row: pd.Series) -> Path:
     return depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
+
+
+def scene_spot_id_default(row: pd.Series) -> str:
+    return f"{str(row['collection']).strip()} / {str(row['path']).strip()}"
+
+
+def merge_scene_spot_mapping(df: pd.DataFrame, mapping_path: Path) -> pd.DataFrame:
+    out = df.copy()
+    out["scene_spot_id"] = out.apply(scene_spot_id_default, axis=1)
+    if not mapping_path.exists():
+        return out
+
+    mapping = pd.read_csv(mapping_path)
+    required = {"collection", "path", "scene_spot_id"}
+    missing = required - set(mapping.columns)
+    if missing:
+        raise KeyError(f"Scene-spot mapping {mapping_path} is missing columns: {sorted(missing)}")
+    mapping = mapping.copy()
+    mapping["collection"] = mapping["collection"].astype(str).str.strip()
+    mapping["path"] = mapping["path"].astype(str).str.strip()
+    mapping["scene_spot_id"] = mapping["scene_spot_id"].astype(str).str.strip()
+    mapping = mapping[["collection", "path", "scene_spot_id"]].drop_duplicates()
+    out = out.merge(mapping, on=["collection", "path"], how="left", suffixes=("", "_mapped"))
+    out["scene_spot_id"] = out["scene_spot_id_mapped"].fillna(out["scene_spot_id"])
+    out = out.drop(columns=["scene_spot_id_mapped"])
+    return out
 
 
 def registration_provenance_current(row: pd.Series) -> str:
@@ -102,7 +134,12 @@ def prediction_exclusion_reason_current(row: pd.Series) -> str | None:
     return "missing_projected_depth_label"
 
 
-def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame, depth_label_root: Path) -> pd.DataFrame:
+def merge_quality_and_cleanup(
+    quality: pd.DataFrame,
+    cleanup: pd.DataFrame,
+    depth_label_root: Path,
+    scene_spot_mapping: Path,
+) -> pd.DataFrame:
     quality = quality.copy()
     cleanup = cleanup.copy()
 
@@ -150,6 +187,7 @@ def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame, dept
     merged["release_registration_policy"] = "ours_only"
     merged["legacy_source_pool"] = merged["source_pool"]
     merged["legacy_prior_cyl_member"] = merged["legacy_source_pool"].astype(str).str.lower().eq("with_prior_cyl")
+    merged = merge_scene_spot_mapping(merged, scene_spot_mapping)
     merged["registration_provenance_current"] = merged.apply(registration_provenance_current, axis=1)
     merged["projected_depth_label_path_current"] = merged.apply(
         lambda row: str(projected_depth_label_path(depth_label_root, row)),
@@ -174,6 +212,7 @@ def merge_quality_and_cleanup(quality: pd.DataFrame, cleanup: pd.DataFrame, dept
         "registration_provenance_current",
         "legacy_prior_cyl_member",
         "legacy_source_pool",
+        "scene_spot_id",
         "release_decision",
         "release_reason",
         "frozen_quant_gate_pass",
@@ -309,6 +348,7 @@ def build_summary(df: pd.DataFrame, quality_path: Path, cleanup_path: Path, dept
         "release_decision_counts": release_counts,
         "cleanup_status_counts": cleanup_counts,
         "legacy_source_pool_counts": df["legacy_source_pool"].value_counts(dropna=False).to_dict(),
+        "scene_spot_id_counts": df["scene_spot_id"].value_counts(dropna=False).to_dict(),
         "registration_provenance_current_counts": df["registration_provenance_current"].value_counts(dropna=False).to_dict(),
         "include_count": int((df["release_decision"] == "include").sum()),
         "defer_count": int((df["release_decision"] == "defer").sum()),
@@ -331,10 +371,11 @@ def main() -> None:
     output_csv = Path(args.output_csv)
     output_json = Path(args.output_summary_json)
     depth_label_root = Path(args.depth_label_root)
+    scene_spot_mapping = Path(args.scene_spot_mapping)
 
     quality = load_csv(quality_path)
     cleanup = load_csv(cleanup_path)
-    frozen = merge_quality_and_cleanup(quality, cleanup, depth_label_root)
+    frozen = merge_quality_and_cleanup(quality, cleanup, depth_label_root, scene_spot_mapping)
     summary = build_summary(frozen, quality_path, cleanup_path, depth_label_root)
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)

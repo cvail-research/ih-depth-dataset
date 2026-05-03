@@ -186,10 +186,11 @@ def select_val_groups(
     val_fraction: float,
     min_val_groups: int,
     seed: int,
+    group_to_collection: dict[str, str],
 ) -> set[str]:
     by_collection: dict[str, list[str]] = defaultdict(list)
     for group in remaining_groups:
-        by_collection[group_collection(group)].append(group)
+        by_collection[group_to_collection[group]].append(group)
 
     val_groups: set[str] = set()
     for collection, groups in by_collection.items():
@@ -212,7 +213,10 @@ def assign_splits(manifest: pd.DataFrame, seed: int, test_fraction: float, val_f
         )
         .reset_index()
     )
-    group_table["collection_for_split"] = group_table["split_group"].map(group_collection)
+    group_collection_map = (
+        manifest.groupby("split_group")["collection"].first().astype(str).to_dict()
+    )
+    group_table["collection_for_split"] = group_table["split_group"].map(group_collection_map)
     no_hardness = ~np.isfinite(group_table["group_hardness_mean"])
     if no_hardness.all():
         # Without baseline scores, use a deterministic hash ordering. The split
@@ -227,7 +231,7 @@ def assign_splits(manifest: pd.DataFrame, seed: int, test_fraction: float, val_f
 
     test_groups = select_test_groups(group_table, test_fraction, min_test_groups)
     remaining_groups = sorted(set(group_table["split_group"]) - test_groups)
-    val_groups = select_val_groups(remaining_groups, val_fraction, min_val_groups, seed)
+    val_groups = select_val_groups(remaining_groups, val_fraction, min_val_groups, seed, group_collection_map)
 
     split_by_group = {group: "train" for group in group_table["split_group"]}
     split_by_group.update({group: "test" for group in test_groups})
