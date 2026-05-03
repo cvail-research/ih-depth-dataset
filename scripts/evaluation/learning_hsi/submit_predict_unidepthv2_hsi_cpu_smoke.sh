@@ -18,7 +18,7 @@ HDR_PATH="${1:-/disk/IHTest_202009_DistStA/Path3_DistStA/Path3_Step4_DistStA/IHT
 OUT_ROOT="${2:-analysis/evaluation/unidepthv2_hsi_cpu_smoke}"
 LABEL_PATH="${3:-analysis/depth_labels/platform_sphere_r2p5/IHTest_202009_DistStA/path3/path3_step4/projected_lidar_depth_label.npz}"
 
-scripts/hsi/run_predict_unidepthv2_hsi.sh \
+scripts/evaluation/learning_hsi/run_predict_unidepthv2_hsi.sh \
   --hdr "${HDR_PATH}" \
   --label-path "${LABEL_PATH}" \
   --out-dir "${OUT_ROOT}" \

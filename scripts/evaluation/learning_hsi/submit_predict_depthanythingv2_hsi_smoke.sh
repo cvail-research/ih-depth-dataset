@@ -17,7 +17,7 @@ mkdir -p logs/out logs/err
 MANIFEST="${1:-analysis/evaluation/baseline_smoke_predictions/prediction_inputs.csv}"
 OUT_ROOT="${2:-analysis/evaluation/depthanythingv2_hsi_smoke_predictions}"
 
-scripts/hsi/run_predict_depthanythingv2_hsi.sh \
+scripts/evaluation/learning_hsi/run_predict_depthanythingv2_hsi.sh \
   --manifest "${MANIFEST}" \
   --out-dir "${OUT_ROOT}" \
   --device cuda \
