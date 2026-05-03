@@ -239,7 +239,7 @@ def _find_hdr(row: pd.Series, disk_root: Path) -> str | None:
         return str(row["hdr_path"])
     if "disk_reference" in row and pd.notna(row["disk_reference"]):
         scene_dir = Path(str(row["disk_reference"])).parent
-        hdrs = sorted(scene_dir.glob("*LWHSI1*.hdr"))
+        hdrs = sorted(scene_dir.glob("*LWHSI*.hdr"))
         if hdrs:
             collect0 = [p for p in hdrs if "collect0" in p.name]
             return str((collect0 or hdrs)[0])
@@ -251,15 +251,20 @@ def _find_hdr(row: pd.Series, disk_root: Path) -> str | None:
     path_dir = disk_root / collection / f"Path{pnum}_DistStA"
     candidates = [
         path_dir / f"Path{pnum}_Step{snum}" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}" / f"{tag}_Path{pnum}_Step{snum}_LWHSI2_DistStA.hdr",
         path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_collect0_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI2_collect0_DistStA.hdr",
         path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI2_DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI1__DistStA.hdr",
+        path_dir / f"Path{pnum}_Step{snum}_DistStA" / f"{tag}_Path{pnum}_Step{snum}_LWHSI2__DistStA.hdr",
     ]
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
     step_dirs = sorted(path_dir.glob(f"Path{pnum}_Step{snum}*"))
     for step_dir in step_dirs:
-        hdrs = sorted(step_dir.glob("*LWHSI1*.hdr"))
+        hdrs = sorted(step_dir.glob("*LWHSI*.hdr"))
         if hdrs:
             collect0 = [p for p in hdrs if "collect0" in p.name]
             return str((collect0 or hdrs)[0])
@@ -271,6 +276,29 @@ def _label_path(row: pd.Series, depth_label_root: Path) -> str | None:
         return str(row["label_path"])
     p = depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
     return str(p) if p.exists() else None
+
+
+def infer_sensor_metadata(hdr_path: str | Path) -> tuple[str | None, int | None]:
+    path = Path(hdr_path)
+    sensor_id: str | None = None
+    name = path.name.upper()
+    if "LWHSI1" in name:
+        sensor_id = "LWHSI1"
+    elif "LWHSI2" in name:
+        sensor_id = "LWHSI2"
+
+    sensor_num_bands: int | None = None
+    try:
+        img = spy.open_image(str(path))
+        sensor_num_bands = int(len(img.metadata.get("wavelength", [])))
+        if sensor_id is None:
+            if sensor_num_bands == 256:
+                sensor_id = "LWHSI1"
+            elif sensor_num_bands == 250:
+                sensor_id = "LWHSI2"
+    except Exception:
+        pass
+    return sensor_id, sensor_num_bands
 
 
 def build_prediction_input_rows_from_scene_manifest(
@@ -288,6 +316,7 @@ def build_prediction_input_rows_from_scene_manifest(
         if not hdr or not label:
             continue
         scene = series.get("scene") or series.get("scene_id") or f"{series['collection']} / {series['path']} / {series['step']}"
+        sensor_id, sensor_num_bands = infer_sensor_metadata(hdr)
         rows.append(
             {
                 "scene": scene,
@@ -296,6 +325,8 @@ def build_prediction_input_rows_from_scene_manifest(
                 "step": series["step"],
                 "hdr_path": hdr,
                 "label_path": label,
+                "sensor_id": sensor_id,
+                "sensor_num_bands": sensor_num_bands,
             }
         )
         if limit and len(rows) >= limit:

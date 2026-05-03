@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
+
 from ihd.evaluation.model_io import (
     build_prediction_input_rows_from_scene_manifest,
+    infer_sensor_metadata,
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
     save_input_prediction_groundtruth_figures,
@@ -37,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lambda-max", type=float, default=12.0)
     ap.add_argument("--idx1", type=int, default=None)
     ap.add_argument("--idx2", type=int, default=None)
+    ap.add_argument("--sensor-id", choices=["LWHSI1", "LWHSI2"], default=None, help="Optional sensor filter.")
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -112,6 +116,10 @@ def main() -> None:
     data_dir = Path(args.data_dir)
     rows_out = []
     if args.hdr:
+        if args.sensor_id:
+            sid, _ = infer_sensor_metadata(args.hdr)
+            if sid != args.sensor_id:
+                raise SystemExit(f"--hdr sensor mismatch: requested {args.sensor_id}, got {sid!r} for {args.hdr}")
         pred = predict_one(
             args.hdr,
             Path(args.out_dir),
@@ -136,6 +144,16 @@ def main() -> None:
         )
     else:
         rows_in = read_prediction_input_manifest(args.manifest)
+
+    if args.sensor_id:
+        filtered = []
+        for row in rows_in:
+            sid = row.get("sensor_id")
+            if not sid:
+                sid, _ = infer_sensor_metadata(row["hdr_path"])
+            if sid == args.sensor_id:
+                filtered.append(row)
+        rows_in = filtered
 
     for row in rows_in:
         out_dir = scene_out_dir(args.out_dir, MODEL_SLUG, row)
