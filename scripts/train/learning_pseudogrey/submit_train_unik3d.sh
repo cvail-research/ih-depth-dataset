@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=ih_train_hsi_unidepthv2
-#SBATCH --output=logs/out/%j_ih_train_hsi_unidepthv2.out
-#SBATCH --error=logs/err/%j_ih_train_hsi_unidepthv2.err
+#SBATCH --job-name=ih_train_unik3d
+#SBATCH --output=logs/out/%j_ih_train_unik3d.out
+#SBATCH --error=logs/err/%j_ih_train_unik3d.err
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -16,9 +16,9 @@ mkdir -p logs/out logs/err
 
 TRAIN_MANIFEST="${1:?Usage: sbatch $0 <train_manifest.csv> <val_manifest.csv> [out_dir]}"
 VAL_MANIFEST="${2:?Usage: sbatch $0 <train_manifest.csv> <val_manifest.csv> [out_dir]}"
-OUT_DIR="${3:-analysis/training/unidepthv2_hsi/$(date +%Y%m%d_%H%M%S)}"
+OUT_DIR="${3:-analysis/training/unik3d/$(date +%Y%m%d_%H%M%S)}"
 
-scripts/train/hsi/run_train_unidepthv2_hsi.sh \
+scripts/train/learning_pseudogrey/run_train_unik3d.sh \
   --train-manifest "${TRAIN_MANIFEST}" \
   --val-manifest "${VAL_MANIFEST}" \
   --out-dir "${OUT_DIR}" \
