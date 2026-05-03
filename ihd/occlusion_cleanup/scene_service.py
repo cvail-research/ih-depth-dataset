@@ -8,7 +8,7 @@ from typing import Any
 import laspy
 import numpy as np
 
-from ihd.annotation_workspace.scene_service import REPO_ROOT, _now, load_gray_preview
+from ihd.annotation_workspace.scene_service import BROWSER_POINT_BUDGET, REPO_ROOT, _now, load_gray_preview
 from ihd.annotation_workspace_nocyl.scene_service import NoCylSceneWorkspace
 from ihd.datasets.cylindrical_camera import camera, project_vect_safe, read_cam
 from ihd.datasets.depth_rasterization import depth_range, rasterize
@@ -49,6 +49,7 @@ class OcclusionCleanupWorkspace:
 
         self._lock = threading.Lock()
         self._pointcloud_payload: dict[str, Any] | None = None
+        self._pointcloud_cache_key: str | None = None
 
     @property
     def hdr_path(self) -> Path:
@@ -86,11 +87,56 @@ class OcclusionCleanupWorkspace:
         return self.source.get_session()
 
     def get_pointcloud_payload(self) -> dict[str, Any]:
-        payload = self.source.get_pointcloud_payload()
-        current_source = payload.get("source_las")
-        if self._pointcloud_payload is not None and self._pointcloud_payload.get("source_las") != current_source:
+        source_payload = self.source.get_pointcloud_payload()
+        source_las = source_payload.get("source_las")
+        display_las_path = Path(source_las) if source_las else None
+        display_source = "projection_las"
+        preview = self._load_cleanup_preview()
+        if preview and self.cleanup_clean_las_path.exists():
+            display_las_path = self.cleanup_clean_las_path
+            display_source = "cleanup_las"
+        if display_las_path is None or not display_las_path.exists():
+            raise FileNotFoundError("Display point cloud LAS is not available for cleanup workspace.")
+
+        cache_key = f"{display_las_path}:{display_las_path.stat().st_mtime_ns}"
+        if self._pointcloud_payload is not None and self._pointcloud_cache_key != cache_key:
             self._pointcloud_payload = None
         if self._pointcloud_payload is None:
+            las = laspy.read(display_las_path)
+            xyz = np.column_stack((las.x, las.y, las.z)).astype(np.float32)
+            if hasattr(las, "intensity"):
+                intensity = np.asarray(las.intensity).astype(np.float32)
+                if intensity.size == xyz.shape[0]:
+                    finite = np.isfinite(intensity)
+                    if np.any(finite):
+                        lo = float(np.min(intensity[finite]))
+                        hi = float(np.max(intensity[finite]))
+                        intensity_norm = (intensity - lo) / (hi - lo) if hi > lo else np.zeros_like(intensity)
+                    else:
+                        intensity_norm = np.zeros_like(intensity)
+                else:
+                    intensity_norm = np.zeros((xyz.shape[0],), dtype=np.float32)
+            else:
+                intensity_norm = np.zeros((xyz.shape[0],), dtype=np.float32)
+            original_point_count = int(xyz.shape[0])
+            if xyz.shape[0] > BROWSER_POINT_BUDGET:
+                stride = int(np.ceil(xyz.shape[0] / BROWSER_POINT_BUDGET))
+                keep = np.arange(0, xyz.shape[0], stride, dtype=np.int64)
+                xyz = xyz[keep]
+                intensity_norm = intensity_norm[keep]
+
+            payload = {
+                "source_kind": "display",
+                "display_source": display_source,
+                "source_las": str(display_las_path),
+                "point_count": int(xyz.shape[0]),
+                "original_point_count": original_point_count,
+                "browser_point_budget": BROWSER_POINT_BUDGET,
+                "x": xyz[:, 0].tolist(),
+                "y": xyz[:, 1].tolist(),
+                "z": xyz[:, 2].tolist(),
+                "intensity_norm": intensity_norm.tolist(),
+            }
             projected_payload = dict(payload)
             fit_state = self.get_fit_status()
             if fit_state.get("ready"):
@@ -126,6 +172,7 @@ class OcclusionCleanupWorkspace:
                 projected_payload["projected_depth"] = []
                 projected_payload["projected_valid"] = []
             self._pointcloud_payload = projected_payload
+            self._pointcloud_cache_key = cache_key
         return self._pointcloud_payload
 
     def get_fit_status(self) -> dict[str, Any]:

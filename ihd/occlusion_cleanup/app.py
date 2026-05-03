@@ -418,6 +418,25 @@ INDEX_HTML = """<!doctype html>
       animateCloud();
     }
 
+    function refreshCloudGeometry() {
+      if (!cloudScene || !cloudPoints) return;
+      const newPoints = buildBaseCloud();
+      const oldPoints = cloudPoints;
+      cloudScene.remove(oldPoints);
+      cloudPoints = newPoints;
+      cloudScene.add(cloudPoints);
+      if (oldPoints.geometry) oldPoints.geometry.dispose();
+    }
+
+    async function refreshPointCloudFromServer() {
+      pointcloud = await fetchJson('/api/pointcloud');
+      if (!cloudRenderer) {
+        renderPointCloud();
+      } else {
+        refreshCloudGeometry();
+      }
+    }
+
     async function loadScene() {
       state = await fetchJson('/api/scene');
       referenceImage.onload = () => updateStatus();
@@ -429,16 +448,14 @@ INDEX_HTML = """<!doctype html>
       } else {
         cleanupOverlayImage.hidden = true;
       }
-      pointcloud = await fetchJson('/api/pointcloud');
-      renderPointCloud();
+      await refreshPointCloudFromServer();
       updateStatus();
     }
 
     document.getElementById('computeFitBtn').onclick = async () => {
       state.fit = await fetchJson('/api/fit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
       state = await fetchJson('/api/scene');
-      pointcloud = await fetchJson('/api/pointcloud');
-      renderPointCloud();
+      await refreshPointCloudFromServer();
       updateStatus();
     };
 
@@ -458,18 +475,21 @@ INDEX_HTML = """<!doctype html>
         body: JSON.stringify({center_xyz: candidatePoint, half_extent_m: halfExtent, selection_mode: candidateSource}),
       });
       state = await fetchJson('/api/scene');
+      await refreshPointCloudFromServer();
       updateStatus();
     };
 
     document.getElementById('recomputePreviewBtn').onclick = async () => {
       state.cleanup_preview = await fetchJson('/api/cleanup-preview', {method: 'POST'});
       state = await fetchJson('/api/scene');
+      await refreshPointCloudFromServer();
       updateStatus();
     };
 
     document.getElementById('undoRegionBtn').onclick = async () => {
       state.cleanup_preview = await fetchJson('/api/cleanup-region-undo', {method: 'POST'});
       state = await fetchJson('/api/scene');
+      await refreshPointCloudFromServer();
       updateStatus();
     };
 
@@ -480,6 +500,7 @@ INDEX_HTML = """<!doctype html>
       if (!regionId) return;
       state.cleanup_preview = await fetchJson(`/api/cleanup-region-delete/${encodeURIComponent(regionId)}`, {method: 'POST'});
       state = await fetchJson('/api/scene');
+      await refreshPointCloudFromServer();
       updateStatus();
     });
 
