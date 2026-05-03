@@ -1,0 +1,341 @@
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+
+from ihd.inference.learning_hsi.unidepthv2_hsi import adapt_unidepthv2_patch_embedding, disable_unidepthv2_xformers
+from ihd.training.learning_hsi.depthanythingv2_hsi_train import IHDepthHSIDataset, collate_batch
+from ihd.training.utils import (
+    batch_metrics,
+    init_wandb,
+    mean_metric,
+    save_prediction_preview,
+    seed_everything,
+    silog_loss,
+)
+
+
+MODEL_SLUG = "unidepthv2_hsi_patch"
+
+
+@dataclass(frozen=True)
+class TrainConfig:
+    train_manifest: str
+    val_manifest: str
+    out_dir: str
+    model_name: str
+    device: str
+    resolution_level: int
+    normalization: str
+    cache_mode: str
+    cache_dir: str | None
+    preload_cache: bool
+    epochs: int
+    batch_size: int
+    learning_rate: float
+    weight_decay: float
+    num_workers: int
+    seed: int
+    log_every: int
+    eval_every_steps: int
+    checkpoint_every_steps: int
+    max_train_steps: int | None
+    max_val_batches: int | None
+    silog_lambda: float
+    min_depth_m: float
+    max_depth_m: float
+    wandb_project: str | None
+    wandb_entity: str | None
+    wandb_run_name: str | None
+    wandb_mode: str
+
+
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(
+        description="Fine-tune UniDepthV2 with a full-LWHSI patch embedding and projected LiDAR depth labels."
+    )
+    ap.add_argument("--train-manifest", required=True, help="CSV with hdr_path,label_path columns.")
+    ap.add_argument("--val-manifest", required=True, help="CSV with hdr_path,label_path columns.")
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--model-name", default="lpiccinelli/unidepth-v2-vitl14")
+    ap.add_argument("--device", default="cuda")
+    ap.add_argument("--resolution-level", type=int, default=9)
+    ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
+    ap.add_argument("--cache-mode", default="none", choices=["none", "memory", "disk"])
+    ap.add_argument("--cache-dir", default=None, help="Directory for normalized HSI tensor cache when --cache-mode disk.")
+    ap.add_argument("--preload-cache", action="store_true", help="Load all HSI tensors once before training starts.")
+    ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--batch-size", type=int, default=1)
+    ap.add_argument("--learning-rate", type=float, default=1e-5)
+    ap.add_argument("--weight-decay", type=float, default=1e-2)
+    ap.add_argument("--num-workers", type=int, default=4)
+    ap.add_argument("--seed", type=int, default=17)
+    ap.add_argument("--log-every", type=int, default=10)
+    ap.add_argument("--eval-every-steps", type=int, default=250)
+    ap.add_argument("--checkpoint-every-steps", type=int, default=1000)
+    ap.add_argument("--max-train-steps", type=int)
+    ap.add_argument("--max-val-batches", type=int)
+    ap.add_argument("--silog-lambda", type=float, default=0.85)
+    ap.add_argument("--min-depth-m", type=float, default=1e-3)
+    ap.add_argument("--max-depth-m", type=float, default=300.0)
+    ap.add_argument("--wandb-project", default=None)
+    ap.add_argument("--wandb-entity", default=None)
+    ap.add_argument("--wandb-run-name", default=None)
+    ap.add_argument("--wandb-mode", default="online", choices=["online", "offline", "disabled"])
+    return ap.parse_args()
+
+
+def move_batch_to_device(batch: dict, device) -> dict:
+    return {
+        **batch,
+        "pixel_values": batch["pixel_values"].to(device, non_blocking=True),
+        "depth_m": batch["depth_m"].to(device, non_blocking=True),
+        "valid_mask": batch["valid_mask"].to(device, non_blocking=True),
+    }
+
+
+def predict_depth(model, pixel_values):
+    import torch.nn.functional as F
+    import unidepth.models.unidepthv2.unidepthv2 as unidepth_module
+
+    ratio_bounds = model.shape_constraints["ratio_bounds"]
+    pixels_bounds = [
+        model.shape_constraints["pixels_min"],
+        model.shape_constraints["pixels_max"],
+    ]
+    if hasattr(model, "resolution_level"):
+        pixels_range = pixels_bounds[1] - pixels_bounds[0]
+        interval = pixels_range / 10
+        pixels_bounds = (
+            model.resolution_level * interval + pixels_bounds[0],
+            (model.resolution_level + 1) * interval + pixels_bounds[0],
+        )
+
+    _, _, h, w = pixel_values.shape
+    paddings, (padded_h, padded_w) = unidepth_module.get_paddings((h, w), ratio_bounds)
+    pad_left, pad_right, pad_top, pad_bottom = paddings
+    _, (new_h, new_w) = unidepth_module.get_resize_factor((padded_h, padded_w), pixels_bounds)
+    image = F.pad(pixel_values, (pad_left, pad_right, pad_top, pad_bottom), value=0.0)
+    image = F.interpolate(image, size=(new_h, new_w), mode="bilinear", align_corners=False)
+
+    _, model_outputs = model.encode_decode({"image": image, "camera": None}, image_metas=[])
+    depth = unidepth_module._postprocess(
+        model_outputs["points"][:, -1:],
+        (padded_h, padded_w),
+        paddings=paddings,
+        interpolation_mode=model.interpolation_mode,
+    )
+    return depth.squeeze(1)
+
+
+def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
+    import torch
+
+    ckpt_dir = out_dir / "checkpoints" / f"step_{step:07d}"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(ckpt_dir / "model")
+    torch.save(
+        {
+            "step": step,
+            "epoch": epoch,
+            "optimizer": optimizer.state_dict(),
+            "config": asdict(config),
+        },
+        ckpt_dir / "training_state.pt",
+    )
+    return ckpt_dir
+
+
+def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None = None) -> dict[str, float]:
+    import torch
+
+    model.eval()
+    losses: list[float] = []
+    metrics: list[dict[str, float]] = []
+    with torch.no_grad():
+        for i, batch in enumerate(loader):
+            if max_batches is not None and i >= max_batches:
+                break
+            batch = move_batch_to_device(batch, device)
+            pred = predict_depth(model, batch["pixel_values"])
+            loss = silog_loss(
+                pred,
+                batch["depth_m"],
+                batch["valid_mask"],
+                min_depth_m=config.min_depth_m,
+                max_depth_m=config.max_depth_m,
+                lam=config.silog_lambda,
+            )
+            losses.append(float(loss.detach().cpu()))
+            metrics.append(
+                batch_metrics(
+                    pred,
+                    batch["depth_m"],
+                    batch["valid_mask"],
+                    min_depth_m=config.min_depth_m,
+                    max_depth_m=config.max_depth_m,
+                )
+            )
+    model.train()
+    return {
+        "val_silog_loss": float(np.mean(losses)) if losses else math.nan,
+        "val_abs_rel": mean_metric(metrics, "abs_rel"),
+        "val_rmse_m": mean_metric(metrics, "rmse_m"),
+        "val_valid_pixels": mean_metric(metrics, "valid_pixels"),
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    if args.cache_mode == "disk" and args.cache_dir is None:
+        args.cache_dir = str(Path(args.out_dir) / "cache" / "hsi_tensors")
+    config = TrainConfig(**vars(args))
+    out_dir = Path(config.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "config.json").write_text(json.dumps(asdict(config), indent=2, sort_keys=True) + "\n")
+    seed_everything(config.seed)
+
+    import torch
+    from torch.utils.data import DataLoader
+    from unidepth.models import UniDepthV2
+
+    device = torch.device(config.device if config.device == "cpu" or torch.cuda.is_available() else "cpu")
+    disable_unidepthv2_xformers()
+    train_ds = IHDepthHSIDataset(
+        config.train_manifest,
+        normalization=config.normalization,
+        cache_mode=config.cache_mode,
+        cache_dir=config.cache_dir,
+        preload_cache=config.preload_cache,
+    )
+    val_ds = IHDepthHSIDataset(
+        config.val_manifest,
+        normalization=config.normalization,
+        cache_mode=config.cache_mode,
+        cache_dir=config.cache_dir,
+        preload_cache=config.preload_cache,
+    )
+    first_hsi, _ = train_ds.load_hsi(0)
+    num_channels = int(first_hsi.shape[0])
+
+    model = UniDepthV2.from_pretrained(config.model_name)
+    adapt_unidepthv2_patch_embedding(model, num_channels)
+    model.resolution_level = config.resolution_level
+    model.interpolation_mode = "bilinear"
+    model = model.to(device)
+    model.train()
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        collate_fn=collate_batch,
+        persistent_workers=config.num_workers > 0 and config.cache_mode == "memory",
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        collate_fn=collate_batch,
+        persistent_workers=config.num_workers > 0 and config.cache_mode == "memory",
+    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+    run = init_wandb(config)
+
+    print(
+        f"Training {config.model_name} with {num_channels} HSI channels on {len(train_ds)} scenes; "
+        f"validating on {len(val_ds)} scenes."
+    )
+    print(
+        f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}; "
+        f"resolution_level={config.resolution_level}; cache_mode={config.cache_mode}; preload_cache={config.preload_cache}"
+    )
+
+    step = 0
+    t0 = time.time()
+    last_pred = None
+    for epoch in range(config.epochs):
+        for batch in train_loader:
+            if int(batch["num_hsi_channels"]) != num_channels:
+                raise ValueError(
+                    f"Model was initialized for {num_channels} channels but batch has {batch['num_hsi_channels']}."
+                )
+            step += 1
+            batch = move_batch_to_device(batch, device)
+            pred = predict_depth(model, batch["pixel_values"])
+            last_pred = (pred, batch["depth_m"], batch["valid_mask"])
+            loss = silog_loss(
+                pred,
+                batch["depth_m"],
+                batch["valid_mask"],
+                min_depth_m=config.min_depth_m,
+                max_depth_m=config.max_depth_m,
+                lam=config.silog_lambda,
+            )
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+
+            if step % config.log_every == 0:
+                metrics = batch_metrics(
+                    pred,
+                    batch["depth_m"],
+                    batch["valid_mask"],
+                    min_depth_m=config.min_depth_m,
+                    max_depth_m=config.max_depth_m,
+                )
+                log = {
+                    "train_silog_loss": float(loss.detach().cpu()),
+                    "train_abs_rel": metrics["abs_rel"],
+                    "train_rmse_m": metrics["rmse_m"],
+                    "epoch": epoch,
+                    "step": step,
+                    "elapsed_minutes": (time.time() - t0) / 60.0,
+                }
+                print(json.dumps(log, sort_keys=True))
+                if run:
+                    run.log(log, step=step)
+
+            if step % config.eval_every_steps == 0:
+                val_log = evaluate(model, val_loader, device, config, config.max_val_batches)
+                val_log.update({"epoch": epoch, "step": step})
+                print(json.dumps(val_log, sort_keys=True))
+                if run:
+                    run.log(val_log, step=step)
+                if last_pred:
+                    save_prediction_preview(out_dir, step, *last_pred)
+
+            if step % config.checkpoint_every_steps == 0:
+                ckpt_dir = save_checkpoint(out_dir, model, optimizer, step, epoch, config)
+                print(f"Saved checkpoint: {ckpt_dir}")
+
+            if config.max_train_steps is not None and step >= config.max_train_steps:
+                break
+        if config.max_train_steps is not None and step >= config.max_train_steps:
+            break
+
+    final_metrics = evaluate(model, val_loader, device, config, config.max_val_batches)
+    final_metrics.update({"step": step, "elapsed_minutes": (time.time() - t0) / 60.0})
+    (out_dir / "final_metrics.json").write_text(json.dumps(final_metrics, indent=2, sort_keys=True) + "\n")
+    if last_pred:
+        save_prediction_preview(out_dir, step, *last_pred)
+    ckpt_dir = save_checkpoint(out_dir, model, optimizer, step, config.epochs - 1, config)
+    print(f"Saved final checkpoint: {ckpt_dir}")
+    print(json.dumps(final_metrics, sort_keys=True))
+    if run:
+        run.log(final_metrics, step=step)
+        run.finish()
+
+
+if __name__ == "__main__":
+    main()
