@@ -9,3 +9,4 @@ build/
 analysis/
 paper/
 checkpoints/
+wandb/
