@@ -263,9 +263,11 @@ INDEX_HTML = """<!doctype html>
         const dy = v - clickY;
         const dist2 = dx * dx + dy * dy;
         const depth = Number(pointcloud.projected_depth[i]);
-        if (dist2 < bestDist2 || (Math.abs(dist2 - bestDist2) <= 1e-6 && depth > bestDepth)) {
-          bestDist2 = dist2;
+        // Occlusion cleanup should target hidden/background leakage, so we
+        // prioritize the farthest projected point inside the click radius.
+        if (depth > bestDepth || (Math.abs(depth - bestDepth) <= 1e-6 && dist2 < bestDist2)) {
           bestDepth = depth;
+          bestDist2 = dist2;
           bestIdx = i;
         }
       }
