@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
-  exec "${PYTHON_BIN}" -m ihd.training.baseline.depthpro_train "$@"
+  exec "${PYTHON_BIN}" -m ihd.training.learning_pseudogrey.depthpro_train "$@"
 fi
 
-exec uv run --extra depthpro python -m ihd.training.baseline.depthpro_train "$@"
+exec uv run --extra depthpro python -m ihd.training.learning_pseudogrey.depthpro_train "$@"

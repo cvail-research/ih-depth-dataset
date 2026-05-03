@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
-  exec "${PYTHON_BIN}" -m ihd.inference.baseline.predict_depthpro "$@"
+  exec "${PYTHON_BIN}" -m ihd.inference.learning_pseudogrey.predict_depthpro "$@"
 fi
 
-exec uv run --frozen --no-sync --extra depthpro python -m ihd.inference.baseline.predict_depthpro "$@"
+exec uv run --frozen --no-sync --extra depthpro python -m ihd.inference.learning_pseudogrey.predict_depthpro "$@"

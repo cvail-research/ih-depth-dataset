@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
 
 from ihd.evaluation.model_io import load_pseudobroadband_rgb
-from ihd.inference.baseline.predict_depthpro import ensure_checkpoint
 from ihd.training.utils import (
     batch_metrics,
     init_wandb,
@@ -27,7 +24,7 @@ from ihd.training.utils import (
 )
 
 
-MODEL_SLUG = "depthpro"
+MODEL_SLUG = "unik3d"
 
 
 @dataclass(frozen=True)
@@ -35,8 +32,9 @@ class TrainConfig:
     train_manifest: str
     val_manifest: str
     out_dir: str
-    checkpoint_path: str
+    model_name: str
     device: str
+    resolution_level: int
     epochs: int
     batch_size: int
     learning_rate: float
@@ -59,13 +57,14 @@ class TrainConfig:
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
-        description="Fine-tune DepthPro on IH pseudo-broadband LWHSI inputs and projected LiDAR depth labels."
+        description="Fine-tune UniK3D on IH pseudo-broadband LWHSI inputs and projected LiDAR depth labels."
     )
     ap.add_argument("--train-manifest", required=True, help="CSV with hdr_path,label_path columns.")
     ap.add_argument("--val-manifest", required=True, help="CSV with hdr_path,label_path columns.")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--checkpoint-path", default="checkpoints/depth_pro.pt")
+    ap.add_argument("--model-name", default="lpiccinelli/unik3d-vitl")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--resolution-level", type=int, default=9)
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--learning-rate", type=float, default=1e-5)
@@ -79,7 +78,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--max-val-batches", type=int)
     ap.add_argument("--silog-lambda", type=float, default=0.85)
     ap.add_argument("--min-depth-m", type=float, default=1e-3)
-    ap.add_argument("--max-depth-m", type=float, default=10000.0)
+    ap.add_argument("--max-depth-m", type=float, default=300.0)
     ap.add_argument("--wandb-project", default=None)
     ap.add_argument("--wandb-entity", default=None)
     ap.add_argument("--wandb-run-name", default=None)
@@ -88,9 +87,8 @@ def parse_args() -> argparse.Namespace:
 
 
 class IHDepthDataset:
-    def __init__(self, manifest: str | Path, transform: Any):
+    def __init__(self, manifest: str | Path):
         self.rows = read_manifest(manifest)
-        self.transform = transform
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -101,10 +99,9 @@ class IHDepthDataset:
         row = self.rows[idx]
         rgb, _ = load_pseudobroadband_rgb(row["hdr_path"])
         depth, mask = load_depth_label(row["label_path"])
-        image = Image.fromarray(rgb)
 
         return {
-            "image": self.transform(image),
+            "rgb": torch.from_numpy(rgb).permute(2, 0, 1).float(),
             "depth_m": torch.from_numpy(depth),
             "valid_mask": torch.from_numpy(mask),
             "scene": scene_label(row),
@@ -120,12 +117,12 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     depths, masks, max_h, max_w = pad_depth_and_mask_items(batch)
     images = []
     for item in batch:
-        _, h, w = item["image"].shape
+        h, w = item["depth_m"].shape
         pad = (0, max_w - w, 0, max_h - h)
-        images.append(F.pad(item["image"], pad, value=0.0))
+        images.append(F.pad(item["rgb"], pad, value=0.0))
 
     return {
-        "image": torch.stack(images, dim=0),
+        "rgb": torch.stack(images, dim=0),
         "depth_m": depths,
         "valid_mask": masks,
         "scene": [b["scene"] for b in batch],
@@ -137,36 +134,54 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
 def move_batch_to_device(batch: dict[str, Any], device) -> dict[str, Any]:
     return {
         **batch,
-        "image": batch["image"].to(device, non_blocking=True),
+        "rgb": batch["rgb"].to(device, non_blocking=True),
         "depth_m": batch["depth_m"].to(device, non_blocking=True),
         "valid_mask": batch["valid_mask"].to(device, non_blocking=True),
     }
 
 
-def predict_depth(model, image, *, interpolation_mode: str = "bilinear"):
+def predict_depth(model, rgb, *, normalize: bool = True):
     import torch
     import torch.nn.functional as F
+    import torchvision.transforms.functional as TF
+    import unik3d.models.unik3d as unik3d_module
 
-    _, _, h, w = image.shape
-    resize = h != model.img_size or w != model.img_size
-    model_input = image
-    if resize:
-        model_input = F.interpolate(
-            model_input,
-            size=(model.img_size, model.img_size),
-            mode=interpolation_mode,
-            align_corners=False,
+    ratio_bounds = model.shape_constraints["ratio_bounds"]
+    pixels_bounds = [
+        model.shape_constraints["pixels_min"],
+        model.shape_constraints["pixels_max"],
+    ]
+    if hasattr(model, "resolution_level"):
+        pixels_range = pixels_bounds[1] - pixels_bounds[0]
+        interval = pixels_range / 10
+        pixels_bounds = (
+            model.resolution_level * interval + pixels_bounds[0],
+            (model.resolution_level + 1) * interval + pixels_bounds[0],
         )
 
-    canonical_inverse_depth, fov_deg = model(model_input)
-    if fov_deg is None:
-        raise RuntimeError("DepthPro FOV head is required for metric depth training.")
-    f_px = 0.5 * w / torch.tan(0.5 * torch.deg2rad(fov_deg.to(torch.float)))
-    f_px = f_px.reshape(-1, 1, 1, 1)
-    inverse_depth = canonical_inverse_depth * (w / f_px)
-    if resize:
-        inverse_depth = F.interpolate(inverse_depth, size=(h, w), mode=interpolation_mode, align_corners=False)
-    return 1.0 / torch.clamp(inverse_depth.squeeze(1), min=1e-4, max=1e4)
+    _, _, h, w = rgb.shape
+    paddings, (padded_h, padded_w) = unik3d_module.get_paddings((h, w), ratio_bounds)
+    pad_left, pad_right, pad_top, pad_bottom = paddings
+    resize_factor, (new_h, new_w) = unik3d_module.get_resize_factor((padded_h, padded_w), pixels_bounds)
+
+    image = rgb
+    if normalize:
+        image = TF.normalize(
+            image.float() / 255.0,
+            mean=unik3d_module.IMAGENET_DATASET_MEAN,
+            std=unik3d_module.IMAGENET_DATASET_STD,
+        )
+    image = F.pad(image, (pad_left, pad_right, pad_top, pad_bottom), value=0.0)
+    image = F.interpolate(image, size=(new_h, new_w), mode="bilinear", align_corners=False)
+    _, model_outputs = model.encode_decode({"image": image}, image_metas={})
+    depth = model_outputs["points"][:, -1:]
+    depth = unik3d_module._postprocess(
+        depth,
+        (padded_h, padded_w),
+        paddings=paddings,
+        interpolation_mode=model.interpolation_mode,
+    )
+    return depth.squeeze(1)
 
 
 def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
@@ -174,7 +189,7 @@ def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, conf
 
     ckpt_dir = out_dir / "checkpoints" / f"step_{step:07d}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), ckpt_dir / "depth_pro_finetuned.pt")
+    model.save_pretrained(ckpt_dir / "model")
     torch.save(
         {
             "step": step,
@@ -198,7 +213,7 @@ def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None
             if max_batches is not None and i >= max_batches:
                 break
             batch = move_batch_to_device(batch, device)
-            pred = predict_depth(model, batch["image"])
+            pred = predict_depth(model, batch["rgb"])
             loss = silog_loss(
                 pred,
                 batch["depth_m"],
@@ -235,27 +250,28 @@ def main() -> None:
     seed_everything(config.seed)
 
     import torch
-    import depth_pro
-    from depth_pro.depth_pro import DEFAULT_MONODEPTH_CONFIG_DICT
+    import unik3d.models.unik3d as unik3d_module
+    import unik3d.models.metadinov2.attention as unik3d_attention
+    import unik3d.models.metadinov2.block as unik3d_block
     from torch.utils.data import DataLoader
-    from torchvision.transforms import Compose, ConvertImageDtype, Normalize, ToTensor
+    from unik3d.models import UniK3D
 
     device = torch.device(config.device if config.device == "cpu" or torch.cuda.is_available() else "cpu")
-    checkpoint = ensure_checkpoint(config.checkpoint_path)
-    model_config = DEFAULT_MONODEPTH_CONFIG_DICT
-    model_config.checkpoint_uri = str(checkpoint)
-    model, _ = depth_pro.create_model_and_transforms(config=model_config, device=device)
-    transform = Compose(
-        [
-            ToTensor(),
-            Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-            ConvertImageDtype(torch.float32),
-        ]
-    )
+    # The workstation GPU can be newer than the installed xFormers kernels.
+    # Force the DINOv2 backbone to use PyTorch attention for reproducibility.
+    unik3d_attention.XFORMERS_AVAILABLE = False
+    unik3d_block.XFORMERS_AVAILABLE = False
+    if device.type == "cpu":
+        unik3d_module.DEVICE = "cpu"
+        unik3d_module.ENABLED = False
+    model = UniK3D.from_pretrained(config.model_name)
+    model.resolution_level = config.resolution_level
+    model.interpolation_mode = "bilinear"
+    model = model.to(device)
     model.train()
 
-    train_ds = IHDepthDataset(config.train_manifest, transform)
-    val_ds = IHDepthDataset(config.val_manifest, transform)
+    train_ds = IHDepthDataset(config.train_manifest)
+    val_ds = IHDepthDataset(config.val_manifest)
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
@@ -275,17 +291,72 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     run = init_wandb(config)
 
-    print(f"Training DepthPro on {len(train_ds)} scenes; validating on {len(val_ds)} scenes.")
-    print(f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}; img_size={model.img_size}")
+    print(f"Training {config.model_name} on {len(train_ds)} scenes; validating on {len(val_ds)} scenes.")
+    print(f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}; resolution_level={config.resolution_level}")
 
     step = 0
     t0 = time.time()
     last_pred = None
+
+    def grad_stats(module) -> tuple[float, float, int]:
+        import torch
+
+        sq_norm_sum = 0.0
+        max_abs = 0.0
+        nonfinite_count = 0
+        for param in module.parameters():
+            grad = param.grad
+            if grad is None:
+                continue
+            grad_detached = grad.detach()
+            nonfinite_count += int((~torch.isfinite(grad_detached)).sum().item())
+            finite = grad_detached[torch.isfinite(grad_detached)]
+            if finite.numel() == 0:
+                continue
+            sq_norm_sum += float((finite * finite).sum().item())
+            max_abs = max(max_abs, float(finite.abs().max().item()))
+        return float(np.sqrt(sq_norm_sum)), max_abs, nonfinite_count
+
+    def module_grad_nonfinite_counts(module) -> dict[str, int]:
+        import torch
+
+        counts = {
+            "grad_nonfinite_backbone": 0,
+            "grad_nonfinite_decoder": 0,
+            "grad_nonfinite_head": 0,
+            "grad_nonfinite_other": 0,
+        }
+        for name, param in module.named_parameters():
+            grad = param.grad
+            if grad is None:
+                continue
+            nonfinite = int((~torch.isfinite(grad.detach())).sum().item())
+            if nonfinite == 0:
+                continue
+            name_l = name.lower()
+            if "backbone" in name_l or "encoder" in name_l:
+                counts["grad_nonfinite_backbone"] += nonfinite
+            elif "decoder" in name_l:
+                counts["grad_nonfinite_decoder"] += nonfinite
+            elif "head" in name_l or "depth" in name_l:
+                counts["grad_nonfinite_head"] += nonfinite
+            else:
+                counts["grad_nonfinite_other"] += nonfinite
+        return counts
+
+    def param_nonfinite_count(module) -> int:
+        import torch
+
+        count = 0
+        for param in module.parameters():
+            count += int((~torch.isfinite(param.detach())).sum().item())
+        return count
+
     for epoch in range(config.epochs):
         for batch in train_loader:
             step += 1
             batch = move_batch_to_device(batch, device)
-            pred = predict_depth(model, batch["image"])
+            pred = predict_depth(model, batch["rgb"])
             last_pred = (pred, batch["depth_m"], batch["valid_mask"])
             loss = silog_loss(
                 pred,
@@ -297,9 +368,28 @@ def main() -> None:
             )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            grad_l2_norm, grad_max_abs, grad_nonfinite_count = grad_stats(model)
+            param_nonfinite_before_step = param_nonfinite_count(model)
             optimizer.step()
+            param_nonfinite_after_step = param_nonfinite_count(model)
 
             if step % config.log_every == 0:
+                valid_mask_batch = batch["valid_mask"]
+                target_batch = batch["depth_m"]
+                valid_count = int(valid_mask_batch.sum().detach().cpu().item())
+                if valid_count > 0:
+                    valid_target = target_batch[valid_mask_batch]
+                    target_min = float(valid_target.min().detach().cpu().item())
+                    target_max = float(valid_target.max().detach().cpu().item())
+                else:
+                    target_min = float("nan")
+                    target_max = float("nan")
+                pred_finite = torch.isfinite(pred)
+                pred_finite_ratio = float(pred_finite.float().mean().detach().cpu().item())
+                pred_nonfinite_count = int((~pred_finite).sum().detach().cpu().item())
+                pred_min = float(pred[pred_finite].min().detach().cpu().item()) if pred_finite.any() else float("nan")
+                pred_max = float(pred[pred_finite].max().detach().cpu().item()) if pred_finite.any() else float("nan")
+
                 metrics = batch_metrics(
                     pred,
                     batch["depth_m"],
@@ -314,7 +404,22 @@ def main() -> None:
                     "epoch": epoch,
                     "step": step,
                     "elapsed_minutes": (time.time() - t0) / 60.0,
+                    "grad_l2_norm": grad_l2_norm,
+                    "grad_max_abs": grad_max_abs,
+                    "grad_nonfinite_count": grad_nonfinite_count,
+                    "param_nonfinite_before_step": param_nonfinite_before_step,
+                    "param_nonfinite_after_step": param_nonfinite_after_step,
+                    "scene": batch["scene"][0] if batch["scene"] else "",
+                    "target_valid_pixels": valid_count,
+                    "target_min_m": target_min,
+                    "target_max_m": target_max,
+                    "pred_finite_ratio": pred_finite_ratio,
+                    "pred_nonfinite_count": pred_nonfinite_count,
+                    "pred_min_m": pred_min,
+                    "pred_max_m": pred_max,
                 }
+                if grad_nonfinite_count > 0:
+                    log.update(module_grad_nonfinite_counts(model))
                 print(json.dumps(log, sort_keys=True))
                 if run:
                     run.log(log, step=step)

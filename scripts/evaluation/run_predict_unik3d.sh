@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
-  exec "${PYTHON_BIN}" -m ihd.inference.baseline.predict_unik3d "$@"
+  exec "${PYTHON_BIN}" -m ihd.inference.learning_pseudogrey.predict_unik3d "$@"
 fi
 
-exec uv run --frozen --no-sync --extra unik3d python -m ihd.inference.baseline.predict_unik3d "$@"
+exec uv run --frozen --no-sync --extra unik3d python -m ihd.inference.learning_pseudogrey.predict_unik3d "$@"

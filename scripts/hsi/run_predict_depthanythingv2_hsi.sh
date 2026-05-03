@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
-  exec "${PYTHON_BIN}" -m ihd.inference.hsi.depthanythingv2_hsi "$@"
+  exec "${PYTHON_BIN}" -m ihd.inference.learning_hsi.depthanythingv2_hsi "$@"
 fi
 
-exec uv run --extra depthanythingv2 python -m ihd.inference.hsi.depthanythingv2_hsi "$@"
+exec uv run --extra depthanythingv2 python -m ihd.inference.learning_hsi.depthanythingv2_hsi "$@"

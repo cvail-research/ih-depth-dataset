@@ -1,37 +1,27 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
-import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
-from ihd.inference.hsi.depthanythingv2_hsi import (
-    adapt_depthanythingv2_patch_embedding,
-    dino_compatible_size,
-    load_hsi_tensor,
-)
+from ihd.inference.learning_hsi.unik3d_hsi import adapt_unik3d_patch_embedding, disable_unik3d_xformers
+from ihd.training.learning_hsi.depthanythingv2_hsi_train import IHDepthHSIDataset, collate_batch
 from ihd.training.utils import (
     batch_metrics,
     init_wandb,
-    load_depth_label,
     mean_metric,
-    pad_depth_and_mask_items,
-    read_manifest,
     save_prediction_preview,
-    scene_label,
     seed_everything,
     silog_loss,
 )
 
 
-MODEL_SLUG = "depthanythingv2_hsi_patch"
+MODEL_SLUG = "unik3d_hsi_patch"
 
 
 @dataclass(frozen=True)
@@ -41,7 +31,7 @@ class TrainConfig:
     out_dir: str
     model_name: str
     device: str
-    input_height: int
+    resolution_level: int
     normalization: str
     cache_mode: str
     cache_dir: str | None
@@ -68,17 +58,14 @@ class TrainConfig:
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
-        description=(
-            "Fine-tune Depth Anything V2 with a full-LWHSI patch embedding and "
-            "projected LiDAR depth labels."
-        )
+        description="Fine-tune UniK3D with a full-LWHSI patch embedding and projected LiDAR depth labels."
     )
     ap.add_argument("--train-manifest", required=True, help="CSV with hdr_path,label_path columns.")
     ap.add_argument("--val-manifest", required=True, help="CSV with hdr_path,label_path columns.")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--model-name", default="depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf")
+    ap.add_argument("--model-name", default="lpiccinelli/unik3d-vitl")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--input-height", type=int, default=518)
+    ap.add_argument("--resolution-level", type=int, default=9)
     ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
     ap.add_argument("--cache-mode", default="none", choices=["none", "memory", "disk"])
     ap.add_argument("--cache-dir", default=None, help="Directory for normalized HSI tensor cache when --cache-mode disk.")
@@ -104,130 +91,7 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-class IHDepthHSIDataset:
-    def __init__(
-        self,
-        manifest: str | Path,
-        *,
-        normalization: str,
-        cache_mode: str = "none",
-        cache_dir: str | Path | None = None,
-        preload_cache: bool = False,
-    ):
-        self.rows = read_manifest(manifest)
-        self.normalization = normalization
-        self.cache_mode = cache_mode
-        self.cache_dir = Path(cache_dir) if cache_dir else None
-        self.memory_cache: dict[int, tuple[Any, dict[str, Any]]] = {}
-        if self.cache_mode == "disk" and self.cache_dir is None:
-            raise ValueError("--cache-dir is required when --cache-mode disk.")
-        if self.cache_mode == "disk" and self.cache_dir is not None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-        if preload_cache:
-            self.preload()
-
-    def __len__(self) -> int:
-        return len(self.rows)
-
-    def preload(self) -> None:
-        for idx in range(len(self.rows)):
-            self.load_hsi(idx)
-
-    def load_hsi(self, idx: int):
-        if self.cache_mode == "memory" and idx in self.memory_cache:
-            return self.memory_cache[idx]
-
-        row = self.rows[idx]
-        if self.cache_mode == "disk":
-            hsi, meta = self.load_hsi_from_disk_cache(row["hdr_path"])
-        else:
-            hsi, meta = load_hsi_tensor(row["hdr_path"], normalization=self.normalization)
-
-        if self.cache_mode == "memory":
-            self.memory_cache[idx] = (hsi, meta)
-        return hsi, meta
-
-    def load_hsi_from_disk_cache(self, hdr_path: str):
-        import torch
-
-        cache_path = self.hsi_cache_path(hdr_path)
-        if cache_path.exists():
-            item = torch.load(cache_path, map_location="cpu", weights_only=False)
-            return item["hsi"], item["meta"]
-
-        hsi, meta = load_hsi_tensor(hdr_path, normalization=self.normalization)
-        tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
-        torch.save({"hsi": hsi, "meta": meta}, tmp_path)
-        tmp_path.replace(cache_path)
-        return hsi, meta
-
-    def hsi_cache_path(self, hdr_path: str) -> Path:
-        assert self.cache_dir is not None
-        return self.cache_dir / f"{self.hsi_cache_key(hdr_path)}.pt"
-
-    def hsi_cache_key(self, hdr_path: str) -> str:
-        path = Path(hdr_path)
-        parts = [str(path.resolve()), self.normalization]
-        for candidate in self.cache_dependency_paths(path):
-            if candidate.exists():
-                stat = candidate.stat()
-                parts.extend([str(candidate.resolve()), str(stat.st_size), str(stat.st_mtime_ns)])
-        return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def cache_dependency_paths(hdr_path: Path) -> list[Path]:
-        return [
-            hdr_path,
-            hdr_path.with_suffix(".bsq"),
-            hdr_path.with_suffix(".img"),
-            hdr_path.with_suffix(".raw"),
-            hdr_path.with_suffix(".dat"),
-        ]
-
-    def __getitem__(self, idx: int) -> dict[str, Any]:
-        import torch
-
-        row = self.rows[idx]
-        hsi, hsi_meta = self.load_hsi(idx)
-        depth, mask = load_depth_label(row["label_path"])
-        return {
-            "hsi": hsi,
-            "depth_m": torch.from_numpy(depth),
-            "valid_mask": torch.from_numpy(mask),
-            "scene": scene_label(row),
-            "hdr_path": row["hdr_path"],
-            "label_path": row["label_path"],
-            "num_hsi_channels": hsi_meta["num_hsi_channels"],
-        }
-
-
-def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
-    import torch
-    import torch.nn.functional as F
-
-    channel_counts = {int(b["hsi"].shape[0]) for b in batch}
-    if len(channel_counts) != 1:
-        raise ValueError(f"Cannot batch scenes with different HSI channel counts: {sorted(channel_counts)}")
-
-    depths, masks, max_h, max_w = pad_depth_and_mask_items(batch)
-    images = []
-    for item in batch:
-        _, h, w = item["hsi"].shape
-        pad = (0, max_w - w, 0, max_h - h)
-        images.append(F.pad(item["hsi"], pad, value=0.0))
-
-    return {
-        "pixel_values": torch.stack(images, dim=0),
-        "depth_m": depths,
-        "valid_mask": masks,
-        "scene": [b["scene"] for b in batch],
-        "hdr_path": [b["hdr_path"] for b in batch],
-        "label_path": [b["label_path"] for b in batch],
-        "num_hsi_channels": sorted(channel_counts)[0],
-    }
-
-
-def move_batch_to_device(batch: dict[str, Any], device) -> dict[str, Any]:
+def move_batch_to_device(batch: dict, device) -> dict:
     return {
         **batch,
         "pixel_values": batch["pixel_values"].to(device, non_blocking=True),
@@ -236,24 +100,39 @@ def move_batch_to_device(batch: dict[str, Any], device) -> dict[str, Any]:
     }
 
 
-def predict_depth(model, pixel_values, target_hw: tuple[int, int], *, input_height: int):
+def predict_depth(model, pixel_values):
     import torch.nn.functional as F
+    import unik3d.models.unik3d as unik3d_module
 
-    _, _, padded_h, padded_w = pixel_values.shape
-    projection = model.backbone.embeddings.patch_embeddings.projection
-    if int(pixel_values.shape[1]) != int(projection.in_channels):
-        raise ValueError(
-            f"Model patch embedding expects {projection.in_channels} channels but batch has {pixel_values.shape[1]}."
+    ratio_bounds = model.shape_constraints["ratio_bounds"]
+    pixels_bounds = [
+        model.shape_constraints["pixels_min"],
+        model.shape_constraints["pixels_max"],
+    ]
+    if hasattr(model, "resolution_level"):
+        pixels_range = pixels_bounds[1] - pixels_bounds[0]
+        interval = pixels_range / 10
+        pixels_bounds = (
+            model.resolution_level * interval + pixels_bounds[0],
+            (model.resolution_level + 1) * interval + pixels_bounds[0],
         )
-    patch_size = int(projection.kernel_size[0])
-    resized_h, resized_w = dino_compatible_size(padded_h, padded_w, input_height, patch_size)
-    model_input = F.interpolate(pixel_values, size=(resized_h, resized_w), mode="bilinear", align_corners=False)
-    outputs = model(pixel_values=model_input)
-    pred = outputs.predicted_depth
-    if pred.ndim == 3:
-        pred = pred.unsqueeze(1)
-    pred = F.interpolate(pred, size=target_hw, mode="bilinear", align_corners=False)
-    return pred.squeeze(1)
+
+    _, _, h, w = pixel_values.shape
+    paddings, (padded_h, padded_w) = unik3d_module.get_paddings((h, w), ratio_bounds)
+    pad_left, pad_right, pad_top, pad_bottom = paddings
+    _, (new_h, new_w) = unik3d_module.get_resize_factor((padded_h, padded_w), pixels_bounds)
+    image = F.pad(pixel_values, (pad_left, pad_right, pad_top, pad_bottom), value=0.0)
+    image = F.interpolate(image, size=(new_h, new_w), mode="bilinear", align_corners=False)
+
+    _, model_outputs = model.encode_decode({"image": image}, image_metas={})
+    depth = model_outputs["points"][:, -1:]
+    depth = unik3d_module._postprocess(
+        depth,
+        (padded_h, padded_w),
+        paddings=paddings,
+        interpolation_mode=model.interpolation_mode,
+    )
+    return depth.squeeze(1)
 
 
 def save_checkpoint(out_dir: Path, model, optimizer, step: int, epoch: int, config: TrainConfig) -> Path:
@@ -285,8 +164,7 @@ def evaluate(model, loader, device, config: TrainConfig, max_batches: int | None
             if max_batches is not None and i >= max_batches:
                 break
             batch = move_batch_to_device(batch, device)
-            target_hw = tuple(batch["depth_m"].shape[-2:])
-            pred = predict_depth(model, batch["pixel_values"], target_hw, input_height=config.input_height)
+            pred = predict_depth(model, batch["pixel_values"])
             loss = silog_loss(
                 pred,
                 batch["depth_m"],
@@ -326,9 +204,10 @@ def main() -> None:
 
     import torch
     from torch.utils.data import DataLoader
-    from transformers import AutoModelForDepthEstimation
+    from unik3d.models import UniK3D
 
     device = torch.device(config.device if config.device == "cpu" or torch.cuda.is_available() else "cpu")
+    disable_unik3d_xformers(device.type)
     train_ds = IHDepthHSIDataset(
         config.train_manifest,
         normalization=config.normalization,
@@ -345,8 +224,11 @@ def main() -> None:
     )
     first_hsi, _ = train_ds.load_hsi(0)
     num_channels = int(first_hsi.shape[0])
-    model = AutoModelForDepthEstimation.from_pretrained(config.model_name)
-    adapt_depthanythingv2_patch_embedding(model, num_channels)
+
+    model = UniK3D.from_pretrained(config.model_name)
+    adapt_unik3d_patch_embedding(model, num_channels)
+    model.resolution_level = config.resolution_level
+    model.interpolation_mode = "bilinear"
     model = model.to(device)
     model.train()
 
@@ -377,7 +259,7 @@ def main() -> None:
     )
     print(
         f"Device: {device}; batch_size={config.batch_size}; epochs={config.epochs}; "
-        f"cache_mode={config.cache_mode}; preload_cache={config.preload_cache}"
+        f"resolution_level={config.resolution_level}; cache_mode={config.cache_mode}; preload_cache={config.preload_cache}"
     )
 
     step = 0
@@ -391,8 +273,7 @@ def main() -> None:
                 )
             step += 1
             batch = move_batch_to_device(batch, device)
-            target_hw = tuple(batch["depth_m"].shape[-2:])
-            pred = predict_depth(model, batch["pixel_values"], target_hw, input_height=config.input_height)
+            pred = predict_depth(model, batch["pixel_values"])
             last_pred = (pred, batch["depth_m"], batch["valid_mask"])
             loss = silog_loss(
                 pred,
