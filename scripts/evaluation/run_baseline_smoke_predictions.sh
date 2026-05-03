@@ -35,34 +35,34 @@ for MODEL in "${MODELS[@]}"; do
   case "${MODEL}" in
     unik3d)
       if [[ -n "${UNIK3D_PYTHON:-}" ]]; then
-        PYTHON_BIN="${UNIK3D_PYTHON}" scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+        PYTHON_BIN="${UNIK3D_PYTHON}" scripts/evaluation/learning_pseudogrey/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
       else
-        scripts/evaluation/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
+        scripts/evaluation/learning_pseudogrey/run_predict_unik3d.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --device cpu --no-vis
       fi
       ;;
     unidepthv2)
       if [[ -n "${UNIDEPTHV2_PYTHON:-}" ]]; then
-        PYTHON_BIN="${UNIDEPTHV2_PYTHON}" scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        PYTHON_BIN="${UNIDEPTHV2_PYTHON}" scripts/evaluation/learning_pseudogrey/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       else
-        scripts/evaluation/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        scripts/evaluation/learning_pseudogrey/run_predict_unidepthv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       fi
       ;;
     depthanythingv2)
       if [[ -n "${DEPTHANYTHINGV2_PYTHON:-}" ]]; then
-        PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON}" scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        PYTHON_BIN="${DEPTHANYTHINGV2_PYTHON}" scripts/evaluation/learning_pseudogrey/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       else
-        scripts/evaluation/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        scripts/evaluation/learning_pseudogrey/run_predict_depthanythingv2.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       fi
       ;;
     depthpro)
       if [[ -n "${DEPTHPRO_PYTHON:-}" ]]; then
-        PYTHON_BIN="${DEPTHPRO_PYTHON}" scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        PYTHON_BIN="${DEPTHPRO_PYTHON}" scripts/evaluation/learning_pseudogrey/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       else
-        scripts/evaluation/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+        scripts/evaluation/learning_pseudogrey/run_predict_depthpro.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       fi
       ;;
     bispectral)
-      scripts/evaluation/run_predict_bispectral.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
+      scripts/evaluation/physics_based/run_predict_bispectral.sh --manifest "${INPUT_MANIFEST}" --out-dir "${OUT_ROOT}" --no-vis
       ;;
     *)
       echo "Unknown model: ${MODEL}" >&2

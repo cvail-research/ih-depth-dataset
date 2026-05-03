@@ -94,7 +94,7 @@ else
   FIG_ARGS=(--no-vis)
 fi
 
-scripts/evaluation/run_predict_bispectral.sh \
+scripts/evaluation/physics_based/run_predict_bispectral.sh \
   --hdr "$HDR" \
   --data-dir "$DATA_DIR" \
   --out-dir "$PRED_DIR" \
