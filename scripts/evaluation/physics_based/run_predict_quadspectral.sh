@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
-  exec "${PYTHON_BIN}" -m ihd.inference.physics_based.predict_bispectral "$@"
+  exec "${PYTHON_BIN}" -m ihd.inference.physics_based.predict_quadspectral "$@"
 fi
 
-exec uv run --frozen --no-sync python -m ihd.inference.physics_based.predict_bispectral "$@"
+exec uv run --frozen --no-sync python -m ihd.inference.physics_based.predict_quadspectral "$@"
