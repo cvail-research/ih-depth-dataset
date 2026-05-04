@@ -10,17 +10,20 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 cd "${REPO_ROOT}"
 mkdir -p logs/out logs/err
 
 MANIFEST="${1:-analysis/evaluation/baseline_smoke_predictions/prediction_inputs.csv}"
 OUT_ROOT="${2:-analysis/evaluation/unik3d_hsi_smoke_predictions}"
+DEVICE="${DEVICE:-cuda}"
+MODEL_NAME="${MODEL_NAME:-lpiccinelli/unik3d-vitl}"
 
 scripts/evaluation/learning_hsi/run_predict_unik3d_hsi.sh \
   --manifest "${MANIFEST}" \
   --out-dir "${OUT_ROOT}" \
-  --device cuda \
+  --device "${DEVICE}" \
+  --model-name "${MODEL_NAME}" \
   --no-vis
 
 uv run python -m ihd.evaluation.evaluate_depth_prediction \

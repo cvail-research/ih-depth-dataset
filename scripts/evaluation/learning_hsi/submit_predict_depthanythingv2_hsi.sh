@@ -16,11 +16,14 @@ mkdir -p logs/out logs/err
 
 MANIFEST="${1:-analysis/evaluation/baseline_smoke_predictions/prediction_inputs.csv}"
 OUT_ROOT="${2:-analysis/evaluation/depthanythingv2_hsi_smoke_predictions}"
+DEVICE="${DEVICE:-cuda}"
+MODEL_NAME="${MODEL_NAME:-depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf}"
 
 scripts/evaluation/learning_hsi/run_predict_depthanythingv2_hsi.sh \
   --manifest "${MANIFEST}" \
   --out-dir "${OUT_ROOT}" \
-  --device cuda \
+  --device "${DEVICE}" \
+  --model-name "${MODEL_NAME}" \
   --no-vis
 
 uv run python -m ihd.evaluation.evaluate_depth_prediction \
