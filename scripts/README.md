@@ -53,3 +53,23 @@ scripts/evaluation/run_merge_baseline_metrics.sh \
   --predictions-root analysis/evaluation/baseline_smoke_predictions \
   --out-csv analysis/evaluation/baseline_scene_scores.csv
 ```
+
+## Visible Scene Categorization Prep (Split v0)
+
+Build visible-asset resolution for split scenes (exact BBVIS first, nearest-step fallback in same path, preferred side = LEFT):
+
+```bash
+scripts/validation/run_build_visible_scene_manifest.sh \
+  --split-manifest manifests/07_split_definition_v0/scene_splits.csv \
+  --output-csv manifests/07_split_definition_v0/scene_splits_visible_resolution_v0.csv \
+  --missing-csv manifests/07_split_definition_v0/scene_splits_visible_missing_v0.csv \
+  --summary-json manifests/07_split_definition_v0/scene_splits_visible_resolution_summary_v0.json
+```
+
+Download missing BBVIS assets in parallel chunks (via Slurm):
+
+```bash
+sbatch scripts/data/run_sync_ih_scene_bbvis_chunk.sh manifests/07_split_definition_v0/bbvis_missing_chunks/chunk_01.csv
+```
+
+After jobs finish, rerun the visible-resolution command to refresh unresolved scenes.
