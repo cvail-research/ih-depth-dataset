@@ -10,21 +10,21 @@ from ihd.evaluation.model_io import (
     infer_sensor_metadata,
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
+    save_depth_prediction,
     save_input_prediction_groundtruth_figures,
     scene_out_dir,
     write_prediction_manifest,
 )
-from ihd.inference.physics_based.run_bispectral import bispectral_distance, _pick_bands
+from ihd.inference.physics_based.run_quadspectral import _pick_bands, quadspectral_distance
 from ihd.inference.physics_based.utils.io_utils import load_scene
 from ihd.inference.physics_based.utils.physics import estimate_T_air
-from ihd.evaluation.model_io import save_depth_prediction
 
 
-MODEL_SLUG = "bispectral"
+MODEL_SLUG = "quadspectral"
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Run physics-based bispectral depth inference.")
+    ap = argparse.ArgumentParser(description="Run physics-based quadspectral depth inference.")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
     src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
@@ -44,8 +44,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--t-air", type=float, default=None)
     ap.add_argument("--lambda-min", type=float, default=8.5)
     ap.add_argument("--lambda-max", type=float, default=12.0)
+    ap.add_argument("--cor-coeff", type=float, default=1.0)
     ap.add_argument("--idx1", type=int, default=None)
     ap.add_argument("--idx2", type=int, default=None)
+    ap.add_argument("--idx3", type=int, default=None)
+    ap.add_argument("--idx4", type=int, default=None)
     ap.add_argument("--sensor-id", choices=["LWHSI1", "LWHSI2"], default=None, help="Optional sensor filter.")
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
@@ -58,8 +61,11 @@ def predict_one(
     t_air: float | None,
     lambda_min: float,
     lambda_max: float,
+    cor_coeff: float,
     idx1: int | None,
     idx2: int | None,
+    idx3: int | None,
+    idx4: int | None,
     save_vis: bool,
     label_path: str | None = None,
     attenuation_profile: str = "auto",
@@ -73,21 +79,36 @@ def predict_one(
     if t_air is None:
         t_air_est, _ = estimate_T_air(meas, lambda_um, attenuation, lambda_min=lambda_min, lambda_max=lambda_max)
         t_air = float(t_air_est)
-    if idx1 is None or idx2 is None:
-        idx1, idx2 = _pick_bands(lambda_um, attenuation, lambda_min, lambda_max)
+    if None in (idx1, idx2, idx3, idx4):
+        idx1, idx2, idx3, idx4 = _pick_bands(lambda_um, attenuation, lambda_min, lambda_max)
 
-    d_hat = bispectral_distance(lambda_um, meas, attenuation, int(idx1), int(idx2), float(t_air))
-    method = f"bispectral_{sensor}"
+    d_hat = quadspectral_distance(
+        lambda_um,
+        meas,
+        attenuation,
+        int(idx1),
+        int(idx2),
+        int(idx3),
+        int(idx4),
+        float(t_air),
+        float(cor_coeff),
+    )
+    method = f"quadspectral_{sensor}"
     metadata = {
         "model_slug": MODEL_SLUG,
         "method_name": method,
         "sensor": sensor,
         "attenuation_profile": attenuation_profile,
         "t_air_k": float(t_air),
+        "cor_coeff": float(cor_coeff),
         "idx1": int(idx1),
         "idx2": int(idx2),
+        "idx3": int(idx3),
+        "idx4": int(idx4),
         "lambda_idx1_um": float(lambda_um[int(idx1)]),
         "lambda_idx2_um": float(lambda_um[int(idx2)]),
+        "lambda_idx3_um": float(lambda_um[int(idx3)]),
+        "lambda_idx4_um": float(lambda_um[int(idx4)]),
     }
     pred_path = save_depth_prediction(
         d_hat,
@@ -136,8 +157,11 @@ def main() -> None:
             args.t_air,
             args.lambda_min,
             args.lambda_max,
+            args.cor_coeff,
             args.idx1,
             args.idx2,
+            args.idx3,
+            args.idx4,
             not args.no_vis,
             args.label_path,
             args.attenuation_profile,
@@ -174,8 +198,11 @@ def main() -> None:
             args.t_air,
             args.lambda_min,
             args.lambda_max,
+            args.cor_coeff,
             args.idx1,
             args.idx2,
+            args.idx3,
+            args.idx4,
             not args.no_vis,
             row.get("label_path"),
             args.attenuation_profile,

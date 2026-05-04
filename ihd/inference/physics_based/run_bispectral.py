@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
 	p.add_argument("--hsi-hdr", type=Path, required=True, help="Path to the scene .hdr")
 	p.add_argument("--lidar-mat", type=Path, default=None, help="Path to lidar.mat (optional, only for error visualization)")
 	p.add_argument("--data-dir", type=Path, default=default_data, help="Data directory (default: ihd/inference/physics_based/data)")
+	p.add_argument(
+		"--attenuation-profile",
+		choices=["auto", "standard", "ozone_cues"],
+		default="auto",
+		help="Attenuation source profile.",
+	)
 	p.add_argument("--out-dir", type=Path, default=here / "outputs", help="Output directory")
 	p.add_argument("--t-air", type=float, default=None, help="Set T_air manually (K). If omitted, it is estimated")
 	p.add_argument("--lambda-min", type=float, default=8.5, help="Range for automatic band selection")
@@ -88,8 +94,9 @@ def main() -> None:
 	args = parse_args()
 	meas, lambda_um, attenuation, _downwelling, sensor = load_scene(
 		str(args.hsi_hdr),
-		str(args.data_dir / "precomputed"),
-		str(args.data_dir),
+		str(args.data_dir / "ozone_cues"),
+		str(args.data_dir / "standard"),
+		attenuation_profile=args.attenuation_profile,
 	)
 
 	if args.t_air is None:
@@ -118,6 +125,7 @@ def main() -> None:
 		"model_slug": "bispectral",
 		"method_name": method,
 		"sensor": sensor,
+		"attenuation_profile": args.attenuation_profile,
 		"t_air_k": float(T_air),
 		"idx1": int(idx1),
 		"idx2": int(idx2),

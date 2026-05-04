@@ -107,6 +107,12 @@ def parse_args() -> argparse.Namespace:
 	p.add_argument("--hsi-hdr", type=Path, required=True)
 	p.add_argument("--lidar-mat", type=Path, default=None)
 	p.add_argument("--data-dir", type=Path, default=default_data)
+	p.add_argument(
+		"--attenuation-profile",
+		choices=["auto", "standard", "ozone_cues"],
+		default="auto",
+		help="Attenuation source profile.",
+	)
 	p.add_argument("--out-dir", type=Path, default=here / "outputs")
 	p.add_argument("--t-air", type=float, default=None)
 	p.add_argument("--lambda-min", type=float, default=8.5)
@@ -127,8 +133,9 @@ def main() -> None:
 	args = parse_args()
 	meas, lambda_um, attenuation, _downwelling, sensor = load_scene(
 		str(args.hsi_hdr),
-		str(args.data_dir / "precomputed"),
-		str(args.data_dir),
+		str(args.data_dir / "ozone_cues"),
+		str(args.data_dir / "standard"),
+		attenuation_profile=args.attenuation_profile,
 	)
 
 	if args.t_air is None:

@@ -10,21 +10,19 @@ from ihd.evaluation.model_io import (
     infer_sensor_metadata,
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
+    save_depth_prediction,
     save_input_prediction_groundtruth_figures,
     scene_out_dir,
     write_prediction_manifest,
 )
-from ihd.inference.physics_based.run_bispectral import bispectral_distance, _pick_bands
-from ihd.inference.physics_based.utils.io_utils import load_scene
-from ihd.inference.physics_based.utils.physics import estimate_T_air
-from ihd.evaluation.model_io import save_depth_prediction
+from ihd.inference.physics_based.run_hyperspectral import solve_full_scene
 
 
-MODEL_SLUG = "bispectral"
+MODEL_SLUG = "hyperspectral"
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Run physics-based bispectral depth inference.")
+    ap = argparse.ArgumentParser(description="Run physics-based hyperspectral depth inference.")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
     src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
@@ -41,12 +39,16 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--sensor-id", choices=["LWHSI1", "LWHSI2"], default=None, help="Optional sensor filter.")
+    ap.add_argument("--downwelling", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--chunk-size", type=int, default=128)
+    ap.add_argument("--lr", type=float, default=None)
+    ap.add_argument("--num-iterations", type=int, default=None)
+    ap.add_argument("--emiss-reg", type=float, default=1e7)
+    ap.add_argument("--tv-reg", type=float, default=1e-4)
     ap.add_argument("--t-air", type=float, default=None)
     ap.add_argument("--lambda-min", type=float, default=8.5)
     ap.add_argument("--lambda-max", type=float, default=12.0)
-    ap.add_argument("--idx1", type=int, default=None)
-    ap.add_argument("--idx2", type=int, default=None)
-    ap.add_argument("--sensor-id", choices=["LWHSI1", "LWHSI2"], default=None, help="Optional sensor filter.")
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -55,48 +57,64 @@ def predict_one(
     hdr_path: str,
     out_dir: Path,
     data_dir: Path,
+    downwelling_flag: bool,
+    chunk_size: int,
+    lr: float | None,
+    num_iterations: int | None,
+    emiss_reg: float,
+    tv_reg: float,
     t_air: float | None,
     lambda_min: float,
     lambda_max: float,
-    idx1: int | None,
-    idx2: int | None,
     save_vis: bool,
     label_path: str | None = None,
     attenuation_profile: str = "auto",
 ) -> Path:
-    meas, lambda_um, attenuation, _downwelling, sensor = load_scene(
-        hdr_path,
-        str(data_dir / "ozone_cues"),
-        str(data_dir / "standard"),
+    if lr is None:
+        lr = 1e-2 if downwelling_flag else 5e-4
+    if num_iterations is None:
+        num_iterations = 100000 if downwelling_flag else 20000
+
+    _v, _t, _emissivity, d, t_air_out = solve_full_scene(
+        Path(hdr_path),
+        data_dir,
+        downwelling_flag=downwelling_flag,
+        chunk_size=int(chunk_size),
+        lr=float(lr),
+        num_iterations=int(num_iterations),
+        emiss_reg=float(emiss_reg),
+        TV_reg=float(tv_reg),
+        t_air=t_air,
+        lambda_min=float(lambda_min),
+        lambda_max=float(lambda_max),
         attenuation_profile=attenuation_profile,
     )
-    if t_air is None:
-        t_air_est, _ = estimate_T_air(meas, lambda_um, attenuation, lambda_min=lambda_min, lambda_max=lambda_max)
-        t_air = float(t_air_est)
-    if idx1 is None or idx2 is None:
-        idx1, idx2 = _pick_bands(lambda_um, attenuation, lambda_min, lambda_max)
+    d_map = d[:, :, 0, 0].astype(np.float64)
 
-    d_hat = bispectral_distance(lambda_um, meas, attenuation, int(idx1), int(idx2), float(t_air))
-    method = f"bispectral_{sensor}"
+    sid, _ = infer_sensor_metadata(hdr_path)
+    method = f"hyperspectral_{sid}"
     metadata = {
         "model_slug": MODEL_SLUG,
         "method_name": method,
-        "sensor": sensor,
+        "sensor": sid,
         "attenuation_profile": attenuation_profile,
-        "t_air_k": float(t_air),
-        "idx1": int(idx1),
-        "idx2": int(idx2),
-        "lambda_idx1_um": float(lambda_um[int(idx1)]),
-        "lambda_idx2_um": float(lambda_um[int(idx2)]),
+        "downwelling": bool(downwelling_flag),
+        "chunk_size": int(chunk_size),
+        "lr": float(lr),
+        "num_iterations": int(num_iterations),
+        "emiss_reg": float(emiss_reg),
+        "tv_reg": float(tv_reg),
+        "t_air_k": float(t_air_out),
     }
     pred_path = save_depth_prediction(
-        d_hat,
+        d_map,
         out_dir,
         model_name=method,
         hdr_path=hdr_path,
         metadata=metadata,
         save_visualization=save_vis,
     )
+
     rgb, _ = load_pseudobroadband_rgb(hdr_path)
     input_gray_u8 = np.mean(rgb.astype(np.float32), axis=2).clip(0, 255).astype(np.uint8)
     gt_depth = None
@@ -112,7 +130,7 @@ def predict_one(
 
     save_input_prediction_groundtruth_figures(
         input_gray_u8=input_gray_u8,
-        prediction_m=np.asarray(d_hat, dtype=np.float32),
+        prediction_m=np.asarray(d_map, dtype=np.float32),
         out_dir=out_dir,
         ground_truth_m=gt_depth,
         ground_truth_mask=gt_mask,
@@ -124,6 +142,7 @@ def main() -> None:
     args = parse_args()
     data_dir = Path(args.data_dir)
     rows_out = []
+
     if args.hdr:
         if args.sensor_id:
             sid, _ = infer_sensor_metadata(args.hdr)
@@ -133,11 +152,15 @@ def main() -> None:
             args.hdr,
             Path(args.out_dir),
             data_dir,
+            bool(args.downwelling),
+            int(args.chunk_size),
+            args.lr,
+            args.num_iterations,
+            float(args.emiss_reg),
+            float(args.tv_reg),
             args.t_air,
-            args.lambda_min,
-            args.lambda_max,
-            args.idx1,
-            args.idx2,
+            float(args.lambda_min),
+            float(args.lambda_max),
             not args.no_vis,
             args.label_path,
             args.attenuation_profile,
@@ -171,11 +194,15 @@ def main() -> None:
             row["hdr_path"],
             out_dir,
             data_dir,
+            bool(args.downwelling),
+            int(args.chunk_size),
+            args.lr,
+            args.num_iterations,
+            float(args.emiss_reg),
+            float(args.tv_reg),
             args.t_air,
-            args.lambda_min,
-            args.lambda_max,
-            args.idx1,
-            args.idx2,
+            float(args.lambda_min),
+            float(args.lambda_max),
             not args.no_vis,
             row.get("label_path"),
             args.attenuation_profile,
