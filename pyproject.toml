@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ih-depth-dataset"
 version = "0.1.0"
-description = "IH-Depth dataset curation tools for the DARPA Invisible Headlights LWIR-LiDAR expansion"
+description = "IH-Depth benchmark devkit and baseline runners"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -57,4 +57,4 @@ conflicts = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["ihd*"]
+include = ["ihd*", "baselines*"]
