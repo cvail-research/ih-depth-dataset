@@ -1,2 +1,0 @@
-collection,path,step,exclusion_reason
-IHTest_202204_DistStA-20221110,path36,path36_step1,"LWHSI contains a car that is missing from the LiDAR, creating a large unlabelled object despite good reprojection metrics."
