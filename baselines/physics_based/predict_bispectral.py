@@ -40,7 +40,10 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Attenuation source profile.",
     )
-    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
+    ap.add_argument(
+        "--depth-label-root",
+        help="Optional root for resolving public IH-Depth PNG labels; defaults to --disk-root.",
+    )
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--t-air", type=float, default=None)

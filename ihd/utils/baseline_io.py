@@ -291,7 +291,7 @@ def infer_sensor_metadata(hdr_path: str | Path) -> tuple[str | None, int | None]
 
 def build_prediction_input_rows_from_scene_manifest(
     scene_manifest: str | Path,
-    depth_label_root: str | Path = "analysis/depth_labels/platform_sphere_r4p0",
+    depth_label_root: str | Path | None = None,
     disk_root: str | Path = "/disk",
     limit: int | None = None,
 ) -> list[dict[str, str]]:
@@ -301,9 +301,8 @@ def build_prediction_input_rows_from_scene_manifest(
         series = pd.Series(row._asdict())
         raw_root = Path(disk_root)
         hdr = _find_hdr(series, raw_root)
-        label = _label_path(series, Path(depth_label_root))
-        if not label and "depth_png_relpath" in series:
-            label = _label_path(series, raw_root)
+        label_root = Path(depth_label_root) if depth_label_root is not None else raw_root
+        label = _label_path(series, label_root)
         if not hdr:
             continue
         scene = series.get("scene") or series.get("scene_id") or f"{series['collection']} / {series['path']} / {series['step']}"

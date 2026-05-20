@@ -40,7 +40,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--resolution-level", type=int, default=9)
     ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
-    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
+    ap.add_argument(
+        "--depth-label-root",
+        help="Optional root for resolving public IH-Depth PNG labels; defaults to --disk-root.",
+    )
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--no-vis", action="store_true")

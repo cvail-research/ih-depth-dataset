@@ -32,7 +32,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--model-name", default="lpiccinelli/unidepth-v2-vitl14")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--resolution-level", type=int, default=9)
-    ap.add_argument("--depth-label-root", default="analysis/depth_labels/platform_sphere_r4p0")
+    ap.add_argument(
+        "--depth-label-root",
+        help="Optional root for resolving public IH-Depth PNG labels; defaults to --disk-root.",
+    )
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--no-vis", action="store_true")
