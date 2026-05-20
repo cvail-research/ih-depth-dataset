@@ -26,7 +26,7 @@ RAW_IH_ROOT/
         <raw_lwhsi_stem>_corresp.txt
 ```
 
-The release root also contains `scenes_train.csv`, `scenes_test.csv`, `scenes_manifest.csv`, `release_summary.json`, and this README. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
+The IH-Depth release root also contains `scenes_train.csv`, `scenes_test.csv`, `scenes_manifest.csv`, and `release_summary.json`. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
 
 Here, `<raw_lwhsi_stem>` means the original LWHSI filename stem for that scene. For example, if the original LWHSI file is named:
 
