@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
-    src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
+    src.add_argument("--manifest", help="CSV with hdr_path and optional label_path columns.")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="lpiccinelli/unik3d-vitl")
     ap.add_argument("--device", default="cuda")

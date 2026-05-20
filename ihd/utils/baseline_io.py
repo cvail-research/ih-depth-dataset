@@ -12,7 +12,7 @@ import pandas as pd
 from PIL import Image
 import spectral as spy
 
-from .depth_png import save_depth_png
+from .depth_png import load_depth_png, save_depth_png
 
 
 def canonical_prediction_filename(hdr_path: str | Path) -> str:
@@ -169,6 +169,13 @@ def save_input_prediction_groundtruth_figures(
     _save_single_depth(gt_vis, "ground_truth.png", vmin=shared_vmin, vmax=shared_vmax)
 
 
+def load_ground_truth_depth(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+    label_path = Path(path)
+    if label_path.suffix.lower() != ".png":
+        raise ValueError(f"IH-Depth public labels must be uint16 PNGs, got: {label_path}")
+    return load_depth_png(label_path)
+
+
 def read_prediction_input_manifest(path: str | Path) -> list[dict[str, str]]:
     with Path(path).open(newline="") as handle:
         rows = list(csv.DictReader(handle))
@@ -203,6 +210,15 @@ def _collection_tag(collection: str) -> str:
 def _find_hdr(row: pd.Series, disk_root: Path) -> str | None:
     if "hdr_path" in row and pd.notna(row["hdr_path"]) and Path(str(row["hdr_path"])).exists():
         return str(row["hdr_path"])
+    if (
+        "raw_scene_relpath" in row
+        and pd.notna(row["raw_scene_relpath"])
+        and "raw_lwhsi_stem" in row
+        and pd.notna(row["raw_lwhsi_stem"])
+    ):
+        candidate = disk_root / str(row["raw_scene_relpath"]) / f"{row['raw_lwhsi_stem']}.hdr"
+        if candidate.exists():
+            return str(candidate)
     collection = str(row["collection"])
     pnum = _path_number(str(row["path"]))
     snum = _step_number(str(row["step"]))
@@ -233,8 +249,21 @@ def _find_hdr(row: pd.Series, disk_root: Path) -> str | None:
 def _label_path(row: pd.Series, depth_label_root: Path) -> str | None:
     if "label_path" in row and pd.notna(row["label_path"]) and Path(str(row["label_path"])).exists():
         return str(row["label_path"])
-    path = depth_label_root / str(row["collection"]) / str(row["path"]) / str(row["step"]) / "projected_lidar_depth_label.npz"
-    return str(path) if path.exists() else None
+    if "depth_png_relpath" in row and pd.notna(row["depth_png_relpath"]):
+        path = depth_label_root / str(row["depth_png_relpath"])
+        if path.exists():
+            return str(path)
+    if {"collection", "path", "step", "raw_lwhsi_stem"}.issubset(row.index):
+        path = (
+            depth_label_root
+            / str(row["collection"])
+            / str(row["path"])
+            / str(row["step"])
+            / f"{row['raw_lwhsi_stem']}_depth.png"
+        )
+        if path.exists():
+            return str(path)
+    return None
 
 
 def infer_sensor_metadata(hdr_path: str | Path) -> tuple[str | None, int | None]:
@@ -270,24 +299,27 @@ def build_prediction_input_rows_from_scene_manifest(
     rows: list[dict[str, str]] = []
     for row in df.sort_values(["collection", "path", "step"]).itertuples(index=False):
         series = pd.Series(row._asdict())
-        hdr = _find_hdr(series, Path(disk_root))
+        raw_root = Path(disk_root)
+        hdr = _find_hdr(series, raw_root)
         label = _label_path(series, Path(depth_label_root))
-        if not hdr or not label:
+        if not label and "depth_png_relpath" in series:
+            label = _label_path(series, raw_root)
+        if not hdr:
             continue
         scene = series.get("scene") or series.get("scene_id") or f"{series['collection']} / {series['path']} / {series['step']}"
         sensor_id, sensor_num_bands = infer_sensor_metadata(hdr)
-        rows.append(
-            {
-                "scene": scene,
-                "collection": series["collection"],
-                "path": series["path"],
-                "step": series["step"],
-                "hdr_path": hdr,
-                "label_path": label,
-                "sensor_id": sensor_id,
-                "sensor_num_bands": sensor_num_bands,
-            }
-        )
+        out_row = {
+            "scene": scene,
+            "collection": series["collection"],
+            "path": series["path"],
+            "step": series["step"],
+            "hdr_path": hdr,
+            "sensor_id": sensor_id,
+            "sensor_num_bands": sensor_num_bands,
+        }
+        if label:
+            out_row["label_path"] = label
+        rows.append(out_row)
         if limit and len(rows) >= limit:
             break
     return rows

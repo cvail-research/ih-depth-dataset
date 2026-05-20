@@ -8,6 +8,7 @@ import numpy as np
 
 from ihd.utils.baseline_io import (
     build_prediction_input_rows_from_scene_manifest,
+    load_ground_truth_depth,
     load_pseudobroadband_rgb,
     read_prediction_input_manifest,
     save_depth_prediction,
@@ -24,9 +25,9 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Run UniDepthV2 on IH broadband LWHSI inputs.")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--hdr", help="Single ENVI .hdr path.")
-    src.add_argument("--manifest", help="CSV with hdr_path,label_path columns.")
+    src.add_argument("--manifest", help="CSV with hdr_path and optional label_path columns.")
     src.add_argument("--scene-manifest", help="Scene manifest with collection/path/step columns.")
-    ap.add_argument("--label-path", help="Ground-truth depth npz path when using --hdr.")
+    ap.add_argument("--label-path", help="Ground-truth IH-Depth uint16 PNG path when using --hdr.")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model-name", default="lpiccinelli/unidepth-v2-vitl14")
     ap.add_argument("--device", default="cuda")
@@ -72,13 +73,7 @@ def predict_one(
     gt_depth = None
     gt_mask = None
     if label_path and Path(label_path).exists():
-        label_npz = np.load(label_path)
-        gt_depth = np.asarray(label_npz["depth_m"], dtype=np.float32)
-        if "valid_mask" in label_npz:
-            gt_mask = np.asarray(label_npz["valid_mask"], dtype=bool)
-        else:
-            gt_mask = np.isfinite(gt_depth) & (gt_depth > 0.0)
-        gt_mask = gt_mask & np.isfinite(gt_depth) & (gt_depth > 0.0)
+        gt_depth, gt_mask = load_ground_truth_depth(label_path)
 
     input_gray_u8 = np.mean(rgb.astype(np.float32), axis=2).clip(0, 255).astype(np.uint8)
     save_input_prediction_groundtruth_figures(
