@@ -45,3 +45,7 @@ To evaluate, place or copy the generated `<raw_lwhsi_stem>_depth.png` into the s
 ```bash
 uv run python ihd/ihd_evaluator.py GT_DIR PREDICTION_DIR
 ```
+
+## Acknowledgement
+
+These baseline scripts adapt open-source monocular depth models to IH LWHSI inputs. We thank the authors of [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2), [UniDepth](https://github.com/lpiccinelli-eth/unidepth), and [UniK3D](https://github.com/lpiccinelli-eth/UniK3D) for releasing their code and model weights.
