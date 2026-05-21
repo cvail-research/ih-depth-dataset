@@ -123,6 +123,8 @@ PREDICTION_DIR/
   input_preview/
 ```
 
+If you also want to run hyperspectral baselines, go [here](baselines/README.md).
+
 ## Acknowledgement
 
 We sincerely thank the authors of [Concurrent Band Selection and Traversability Estimation From Long-Wave Hyperspectral Imagery in Off-Road Settings](https://openaccess.thecvf.com/content/WACV2024/papers/Yellin_Concurrent_Band_Selection_and_Traversability_Estimation_From_Long-Wave_Hyperspectral_Imagery_WACV_2024_paper.pdf) for releasing the [IH dataset](https://registry.opendata.aws/darpa-invisible-headlights/). We are grateful to the authors of [KITTI-devkit](https://github.com/joseph-zhong/KITTI-devkit) for open-sourcing their evaluation code.

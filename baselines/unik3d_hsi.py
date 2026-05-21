@@ -13,7 +13,7 @@ from ihd.utils.baseline_io import (
     scene_out_dir,
     write_prediction_manifest,
 )
-from baselines.learning_hsi.depthanythingv2_hsi import load_hsi_tensor
+from baselines.depthanythingv2_hsi import load_hsi_tensor
 
 
 MODEL_SLUG = "unik3d_hsi_patch"
