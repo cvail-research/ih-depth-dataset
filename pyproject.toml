@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ih-depth-dataset"
 version = "0.1.0"
-description = "IH-Depth dataset curation tools for the DARPA Invisible Headlights LWIR-LiDAR expansion"
+description = "IH-Depth benchmark devkit and evaluator"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -39,22 +39,6 @@ depthanythingv2 = [
     "torchvision",
     "transformers",
 ]
-depthpro = [
-    "depth_pro @ git+https://github.com/apple/ml-depth-pro.git",
-    "huggingface-hub",
-]
-
-[tool.uv]
-conflicts = [
-    [
-        { extra = "unik3d" },
-        { extra = "depthpro" },
-    ],
-    [
-        { extra = "unidepthv2" },
-        { extra = "depthpro" },
-    ],
-]
 
 [tool.setuptools.packages.find]
-include = ["ihd*"]
+include = ["ihd*", "baselines*"]

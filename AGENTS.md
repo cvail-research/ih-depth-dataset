@@ -1,2 +1,0 @@
-- Never run heavy commands on login nodes (e.g., cvail); assume they are shared and resource-constrained.
-- If you need to run heavy commands create an .sh in the scripts folder and run it with sbatch.
