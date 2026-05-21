@@ -10,7 +10,7 @@
 
 ### Download the dataset
 
-First download and unpack the raw [Invisible Headlights (IH) dataset](https://registry.opendata.aws/darpa-invisible-headlights/). Then download [IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth) and unpack it into the same root directory.
+First download [IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth) and unpack it into your target `RAW_IH_ROOT` directory.
 
 IH-Depth is a KITTI-style overlay on top of the raw IH tree. The benchmark depth maps, cylindrical camera files, and correspondence files follow the raw IH folder structure, so each IH-Depth scene artifact lands beside the corresponding raw LWHSI `.hdr/.bsq` files:
 
@@ -27,6 +27,14 @@ RAW_IH_ROOT/
 ```
 
 The IH-Depth release root also contains `scenes_train.csv`, `scenes_test.csv`, `scenes_manifest.csv`, and `release_summary.json`. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
+
+If you only want the raw `.hdr/.bsq` files needed by the released IH-Depth scenes, use `scenes_manifest.csv` with:
+
+```bash
+uv run python -m ihd.utils.download_ih RAW_IH_ROOT --manifest scenes_manifest.csv
+```
+
+If you prefer the full raw [IH dataset](https://registry.opendata.aws/darpa-invisible-headlights/) instead of the manifest-limited subset, download and unpack it into the same `RAW_IH_ROOT` directory.
 
 Here, `<raw_lwhsi_stem>` means the original LWHSI filename stem for that scene. For example, if the original LWHSI file is named:
 
