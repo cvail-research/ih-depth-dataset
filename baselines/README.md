@@ -27,10 +27,11 @@ uv sync --extra unik3d
 Run one scene:
 
 ```bash
-uv run python -m baselines.depthanythingv2_hsi \
+uv run python -m baselines.unidepthv2_hsi \
   --hdr RAW_IH_ROOT/<collection>/<PathXX_DistStA>/<PathXX_StepYY_DistStA>/<raw_lwhsi_stem>.hdr \
   --out-dir PREDICTION_DIR \
-  --device cuda
+  --device cuda \
+  --no-vis
 ```
 
 The script writes a prediction PNG using the public IH-Depth encoding:
