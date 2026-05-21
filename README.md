@@ -123,7 +123,7 @@ PREDICTION_DIR/
   input_preview/
 ```
 
-If you also want to run hyperspectral baselines, go [here](baselines/README.md).
+If you also want to run hyperspectral baselines, go [here](baselines/).
 
 ## Acknowledgement
 
