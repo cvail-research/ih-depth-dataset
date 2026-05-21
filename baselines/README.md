@@ -30,8 +30,7 @@ Run one scene:
 uv run python -m baselines.unidepthv2_hsi \
   --hdr RAW_IH_ROOT/<collection>/<PathXX_DistStA>/<PathXX_StepYY_DistStA>/<raw_lwhsi_stem>.hdr \
   --out-dir PREDICTION_DIR \
-  --device cuda \
-  --no-vis
+  --device cuda
 ```
 
 The script writes a prediction PNG using the public IH-Depth encoding:
