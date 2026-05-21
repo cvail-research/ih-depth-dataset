@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ih-depth-dataset"
 version = "0.1.0"
-description = "IH-Depth benchmark devkit and baseline runners"
+description = "IH-Depth benchmark devkit and evaluator"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

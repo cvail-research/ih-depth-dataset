@@ -2,7 +2,7 @@
 
 ## Overview
 
-[IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth) is a curated LWIR/LWHSI-LiDAR benchmark derived from the [Invisible Headlights (IH) dataset](https://registry.opendata.aws/darpa-invisible-headlights/). The released benchmark contains 51 off-road scenes, split into 41 training scenes and 10 test scenes. The dataset is released under the CC BY 4.0 license. This repository is the benchmark devkit and code for running the reference baseline methods for that release.
+[IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth) is a curated LWIR/LWHSI-LiDAR benchmark derived from the [Invisible Headlights (IH) dataset](https://registry.opendata.aws/darpa-invisible-headlights/). The released benchmark contains 51 off-road scenes, split into 41 training scenes and 10 test scenes. The dataset is released under the CC BY 4.0 license. This repository provides the benchmark devkit and evaluator for that release.
 
 ![IH-Depth dataset](assets/ih_depth_dataset.jpg?raw=true)
 
@@ -123,26 +123,9 @@ PREDICTION_DIR/
   input_preview/
 ```
 
-If you also want to run the retained `Depth Anything V2` baseline example below, install its extra dependencies with:
-
-```bash
-uv sync --extra depthanythingv2
-```
-
-Then, make inference with the following command:
-
-```bash
-uv run python -m baselines.learning_broadband.depthanythingv2 \
-  --hdr /path/to/scene/IHTest_202104_Path15_Step11_LWHSI1_collect0_DistStA.hdr \
-  --out-dir /tmp/ihd_predictions \
-  --device cuda
-```
-
-That command writes a public-contract prediction PNG named `<raw_lwhsi_stem>_depth.png` that can be dropped into `PREDICTION_DIR`.
-
 ## Acknowledgement
 
-We sincerely thank the authors of [Concurrent Band Selection and Traversability Estimation From Long-Wave Hyperspectral Imagery in Off-Road Settings](https://openaccess.thecvf.com/content/WACV2024/papers/Yellin_Concurrent_Band_Selection_and_Traversability_Estimation_From_Long-Wave_Hyperspectral_Imagery_WACV_2024_paper.pdf) for releasing the [IH dataset](https://registry.opendata.aws/darpa-invisible-headlights/). We are grateful to the authors of [Ozone-Cues-Mitigate-Reflected-Downwelling-Radiance-in-LWIR-Absorption-Based-Ranging](https://github.com/unaydorken/Ozone-Cues-Mitigate-Reflected-Downwelling-Radiance-in-LWIR-Absorption-Based-Ranging), [Depth Pro](https://github.com/apple/ml-depth-pro), [UniK3D](https://github.com/lpiccinelli-eth/UniK3D), [UniDepth](https://github.com/lpiccinelli-eth/unidepth), [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2), and [KITTI-devkit](https://github.com/joseph-zhong/KITTI-devkit) for open-sourcing their code and models.
+We sincerely thank the authors of [Concurrent Band Selection and Traversability Estimation From Long-Wave Hyperspectral Imagery in Off-Road Settings](https://openaccess.thecvf.com/content/WACV2024/papers/Yellin_Concurrent_Band_Selection_and_Traversability_Estimation_From_Long-Wave_Hyperspectral_Imagery_WACV_2024_paper.pdf) for releasing the [IH dataset](https://registry.opendata.aws/darpa-invisible-headlights/). We are grateful to the authors of [KITTI-devkit](https://github.com/joseph-zhong/KITTI-devkit) for open-sourcing their evaluation code.
 
 ## License
 
