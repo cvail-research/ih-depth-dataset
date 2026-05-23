@@ -10,9 +10,19 @@
 
 ### Download the dataset
 
-First download [IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth) and unpack it into your target `RAW_IH_ROOT` directory.
+Start by preparing a raw IH root directory, referred to below as `RAW_IH_ROOT`.
 
-IH-Depth is a KITTI-style overlay on top of the raw IH tree. The benchmark depth maps, cylindrical camera files, and correspondence files follow the raw IH folder structure, so each IH-Depth scene artifact lands beside the corresponding raw LWHSI `.hdr/.bsq` files:
+If you only want the raw `.hdr/.bsq` files needed by the released scenes, download those raw files first with:
+
+```bash
+uv run python -m ihd.utils.download_ih RAW_IH_ROOT --manifest metadata/scenes_manifest.csv
+```
+
+If you prefer the full raw IH dataset instead of the manifest-limited subset, download and place it into the same `RAW_IH_ROOT` directory.
+
+Then download [IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth).
+
+The public benchmark artifact is a depth PNG stored beside the corresponding raw LWHSI `.hdr/.bsq` files:
 
 ```text
 RAW_IH_ROOT/
@@ -22,19 +32,7 @@ RAW_IH_ROOT/
         <raw_lwhsi_stem>.hdr
         <raw_lwhsi_stem>.bsq
         <raw_lwhsi_stem>_depth.png
-        <raw_lwhsi_stem>.cyl
-        <raw_lwhsi_stem>_corresp.txt
 ```
-
-The IH-Depth release root also contains `scenes_train.csv`, `scenes_test.csv`, `scenes_manifest.csv`, and `release_summary.json`. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
-
-If you only want the raw `.hdr/.bsq` files needed by the released IH-Depth scenes, use `scenes_manifest.csv` with:
-
-```bash
-uv run python -m ihd.utils.download_ih RAW_IH_ROOT --manifest scenes_manifest.csv
-```
-
-If you prefer the full raw [IH dataset](https://registry.opendata.aws/darpa-invisible-headlights/) instead of the manifest-limited subset, download and unpack it into the same `RAW_IH_ROOT` directory.
 
 Here, `<raw_lwhsi_stem>` means the original LWHSI filename stem for that scene. For example, if the original LWHSI file is named:
 
@@ -42,22 +40,26 @@ Here, `<raw_lwhsi_stem>` means the original LWHSI filename stem for that scene. 
 IHTest_202104_Path15_Step11_LWHSI1_collect0_DistStA.hdr
 ```
 
-then depth PNG must be named:
+then the released depth PNG must be named:
 
 ```text
 IHTest_202104_Path15_Step11_LWHSI1_collect0_DistStA_depth.png
 ```
 
-the same applies for other artifacts.
+If you downloaded IH-Depth into a separate directory `IH_DEPTH_ROOT`, place only the depth PNGs into `RAW_IH_ROOT` with:
+
+```bash
+rsync -a --include '*/' --include '*_depth.png' --exclude '*' IH_DEPTH_ROOT/ RAW_IH_ROOT/
+```
+
+The IH-Depth release root contains `scenes_train.csv`, `scenes_test.csv`, and `scenes_manifest.csv`. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
 
 ### IH-Depth train and test
 
-For IH-Depth training and testing sets we release sparse LiDAR-projected metric depth labels, per-scene cylindrical camera geometry, and correspondence files. Each released scene has exactly these public benchmark artifacts, all sharing the original raw LWHSI stem:
+For IH-Depth training and testing sets we release sparse LiDAR-projected metric depth labels. Each released scene has the following public benchmark artifact:
 
 ```text
 <raw_lwhsi_stem>_depth.png
-<raw_lwhsi_stem>.cyl
-<raw_lwhsi_stem>_corresp.txt
 ```
 
 Depth PNGs follow KITTI-style encoding contract with a small modification:
@@ -69,7 +71,7 @@ stored_value = round(128 * depth_m)
 depth_m = stored_value / 128
 ```
 
-This `x128` scale preserves the released maximum observed depth range (<`415 m`) while remaining KITTI-style 16-bit PNG encoding format. `ihd/example/` contains the first-training-scene artifact bundle: a benchmark-format depth PNG plus the matching `.cyl` and correspondence `.txt` example files. The example is for structure and inspection.
+This `x128` scale preserves the released maximum observed depth range (<`415 m`) while remaining 16-bit PNG encoding format. `ihd/example/` contains a benchmark-format depth PNG example for structure and inspection.
 
 ## Test Evaluation
 
@@ -79,13 +81,13 @@ We provide an evaluator to compute common depth estimation metrics (AbsRel, RMSE
 uv sync
 ```
 
-After unpacking IH-Depth over the raw IH root, create a compact ground-truth evaluation folder from `scenes_test.csv`:
+After placing the benchmark depth PNGs into the raw IH root, create a compact ground-truth evaluation folder from `scenes_test.csv`:
 
 ```bash
 uv run python -m ihd.utils.prepare_eval_split RAW_IH_ROOT GT_DIR --split_csv scenes_test.csv
 ```
 
-Use `--symlink` to link depth PNGs instead of copying them. The helper only prepares depth PNGs because the evaluator does not consume `.cyl` or `_corresp.txt` files.
+Use `--symlink` to link depth PNGs instead of copying them.
 
 Run your model on the raw `.hdr/.bsq` input files and save prediction PNGs into a mirrored prediction tree:
 
