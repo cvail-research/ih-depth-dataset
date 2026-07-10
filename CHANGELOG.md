@@ -1,5 +1,11 @@
 # Changelog
 
+**07/10/2026 -- geometry and correspondence artifacts are restored for the public release**
+
+- IH-Depth `.cyl` cylindrical camera geometry and `_corresp.txt` correspondence files are restored as released benchmark artifacts for each public scene.
+- The released scene manifests include `cyl_relpath` and `corresp_relpath` columns beside `depth_png_relpath`.
+- We verified that the restored `.cyl` and `_corresp.txt` files do not overwrite raw IH geometry/correspondence files for the released scenes.
+
 **05/22/2026 -- the public release is now depth-label-only**
 
 - Public IH-Depth release artifacts are now limited to benchmark `*_depth.png` files plus split manifests.

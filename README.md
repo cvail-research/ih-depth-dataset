@@ -22,7 +22,7 @@ If you prefer the full raw IH dataset instead of the manifest-limited subset, do
 
 Then download [IH-Depth](https://huggingface.co/datasets/SemilleroCV/ih-depth).
 
-The public benchmark artifact is a depth PNG stored beside the corresponding raw LWHSI `.hdr/.bsq` files:
+The public benchmark artifacts are stored beside the corresponding raw LWHSI `.hdr/.bsq` files:
 
 ```text
 RAW_IH_ROOT/
@@ -32,7 +32,11 @@ RAW_IH_ROOT/
         <raw_lwhsi_stem>.hdr
         <raw_lwhsi_stem>.bsq
         <raw_lwhsi_stem>_depth.png
+        <raw_lwhsi_stem>.cyl
+        <raw_lwhsi_stem>_corresp.txt
 ```
+
+The `*_depth.png` file is the sparse metric depth label used by the evaluator. The `.cyl` file contains the IH-Depth cylindrical camera geometry for that LWHSI scene, and the `_corresp.txt` file contains the image/LiDAR correspondence points associated with that geometry.
 
 Here, `<raw_lwhsi_stem>` means the original LWHSI filename stem for that scene. For example, if the original LWHSI file is named:
 
@@ -46,20 +50,22 @@ then the released depth PNG must be named:
 IHTest_202104_Path15_Step11_LWHSI1_collect0_DistStA_depth.png
 ```
 
-If you downloaded IH-Depth into a separate directory `IH_DEPTH_ROOT`, place only the depth PNGs into `RAW_IH_ROOT` with:
+If you downloaded IH-Depth into a separate directory `IH_DEPTH_ROOT`, place the released per-scene artifacts into `RAW_IH_ROOT` with:
 
 ```bash
-rsync -a --include '*/' --include '*_depth.png' --exclude '*' IH_DEPTH_ROOT/ RAW_IH_ROOT/
+rsync -a --include '*/' --include '*_depth.png' --include '*.cyl' --include '*_corresp.txt' --exclude '*' IH_DEPTH_ROOT/ RAW_IH_ROOT/
 ```
 
 The IH-Depth release root contains `scenes_train.csv`, `scenes_test.csv`, and `scenes_manifest.csv`. The train/test split CSVs define the IH-Depth benchmark splits; they are not part of the raw IH dataset.
 
 ### IH-Depth train and test
 
-For IH-Depth training and testing sets we release sparse LiDAR-projected metric depth labels. Each released scene has the following public benchmark artifact:
+For IH-Depth training and testing sets we release sparse LiDAR-projected metric depth labels, cylindrical camera geometry, and image/LiDAR correspondence points. Each released scene has the following public benchmark artifacts:
 
 ```text
 <raw_lwhsi_stem>_depth.png
+<raw_lwhsi_stem>.cyl
+<raw_lwhsi_stem>_corresp.txt
 ```
 
 Depth PNGs follow KITTI-style encoding contract with a small modification:
