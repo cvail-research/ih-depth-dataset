@@ -46,6 +46,11 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--disk-root", default="/disk")
     ap.add_argument("--limit", type=int)
+    ap.add_argument(
+        "--no-voxel-mask",
+        action="store_true",
+        help="Skip corrupted-voxel/bad-scan-line masking and normalize the raw cube as-is.",
+    )
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -208,7 +213,7 @@ def run_manifest(args: argparse.Namespace) -> None:
         rows_in = read_prediction_input_manifest(args.manifest)
 
     for row in rows_in:
-        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         num_channels = int(hsi_tensor.shape[0])
         if model is None or active_channels != num_channels:
             model, device = load_model(args.model_name, args.device, args.resolution_level, num_channels)
@@ -232,7 +237,7 @@ def run_manifest(args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     if args.hdr:
-        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         model, device = load_model(args.model_name, args.device, args.resolution_level, int(hsi_tensor.shape[0]))
         pred = predict_hsi_tensor(
             model,

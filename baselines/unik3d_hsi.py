@@ -34,6 +34,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--resolution-level", type=int, default=9)
     ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
+    ap.add_argument(
+        "--no-voxel-mask",
+        action="store_true",
+        help="Skip corrupted-voxel/bad-scan-line masking and normalize the raw cube as-is.",
+    )
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -142,8 +147,8 @@ def predict_hsi_tensor(model, device, hsi_tensor, meta: dict[str, Any], hdr_path
     return save_depth_prediction(depth_np, out_dir, model_name, hdr_path, meta, save_visualization=save_vis)
 
 
-def predict_one(model, device, hdr_path: str, out_dir: Path, model_name: str, normalization: str, save_vis: bool) -> Path:
-    hsi_tensor, meta = load_hsi_tensor(hdr_path, normalization=normalization)
+def predict_one(model, device, hdr_path: str, out_dir: Path, model_name: str, normalization: str, save_vis: bool, mask_invalid: bool = True) -> Path:
+    hsi_tensor, meta = load_hsi_tensor(hdr_path, normalization=normalization, mask_invalid=mask_invalid)
     return predict_hsi_tensor(model, device, hsi_tensor, meta, hdr_path, out_dir, model_name, save_vis)
 
 
@@ -153,7 +158,7 @@ def run_manifest(args: argparse.Namespace) -> None:
     device = None
     active_channels = None
     for row in read_prediction_input_manifest(args.manifest):
-        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         num_channels = int(hsi_tensor.shape[0])
         if model is None or active_channels != num_channels:
             model, device = load_model(args.model_name, args.device, args.resolution_level, num_channels)
@@ -167,7 +172,7 @@ def run_manifest(args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     if args.hdr:
-        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         model, device = load_model(args.model_name, args.device, args.resolution_level, int(hsi_tensor.shape[0]))
         pred = predict_hsi_tensor(model, device, hsi_tensor, meta, args.hdr, Path(args.out_dir), args.model_name, not args.no_vis)
         print(pred)

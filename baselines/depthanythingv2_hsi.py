@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import math
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from ihd.utils.baseline_io import (
     read_prediction_input_manifest,
     save_depth_prediction,
     scene_out_dir,
+    valid_voxel_mask,
     write_prediction_manifest,
 )
 
@@ -39,6 +41,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--input-height", type=int, default=518)
     ap.add_argument("--normalization", default="per-band-standardize", choices=["per-band-standardize", "per-band-minmax"])
+    ap.add_argument(
+        "--no-voxel-mask",
+        action="store_true",
+        help="Skip corrupted-voxel/bad-scan-line masking and normalize the raw cube as-is.",
+    )
     ap.add_argument("--no-vis", action="store_true")
     return ap.parse_args()
 
@@ -54,29 +61,58 @@ def dino_compatible_size(height: int, width: int, target_height: int, patch_size
     return resized_h, resized_w
 
 
-def normalize_hsi_cube(cube: np.ndarray, mode: str) -> np.ndarray:
-    hsi = np.nan_to_num(np.asarray(cube, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
-    if mode == "per-band-minmax":
-        lo = np.min(hsi, axis=(0, 1), keepdims=True)
-        hi = np.max(hsi, axis=(0, 1), keepdims=True)
-        denom = np.maximum(hi - lo, 1e-6)
-        return (hsi - lo) / denom
-    if mode == "per-band-standardize":
-        mean = np.mean(hsi, axis=(0, 1), keepdims=True)
-        std = np.std(hsi, axis=(0, 1), keepdims=True)
-        return (hsi - mean) / np.maximum(std, 1e-6)
-    raise ValueError(f"Unknown HSI normalization: {mode}")
+def normalize_hsi_cube(cube: np.ndarray, mode: str, mask_invalid: bool = True) -> np.ndarray:
+    
+    if mode not in ("per-band-minmax", "per-band-standardize"):
+        raise ValueError(f"Unknown HSI normalization: {mode}")
+
+    with np.errstate(invalid="ignore"):
+        hsi = np.asarray(cube, dtype=np.float32)
+    # Both branches below hand back a fresh array, so the rest of this function
+    # can work in place without touching the caller's cube.
+    if mask_invalid:
+        hsi = np.where(valid_voxel_mask(hsi), hsi, np.nan)
+    else:
+        hsi = np.nan_to_num(hsi, nan=0.0, posinf=0.0, neginf=0.0)
+
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        if mode == "per-band-minmax":
+            offset = _band_stat(np.nanmin, hsi, fill=0.0)
+            scale = _band_stat(np.nanmax, hsi, fill=0.0) - offset
+        else:
+            offset = _band_stat(np.nanmean, hsi, fill=0.0)
+            scale = _band_stat(np.nanstd, hsi, fill=1.0)
+        # A band with no usable spread -- fully rejected, constant, or with
+        # statistics that overflowed -- is passed through instead of being
+        # scaled to infinity.
+        scale = np.where(np.isfinite(scale) & (scale > 0.0), scale, 1.0).astype(np.float32)
+        hsi -= offset
+        hsi /= scale
+    if not mask_invalid:
+        return hsi
+    # Rejected voxels land on 0, the normalized position of the band's own
+    # minimum (minmax) or mean (standardize).
+    return np.nan_to_num(hsi, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
 
 
-def load_hsi_tensor(hdr_path: str | Path, *, normalization: str):
+def _band_stat(reduce_fn, hsi: np.ndarray, fill: float) -> np.ndarray:
+    """Per-band statistic over the valid voxels, with unusable bands filled."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # fully rejected bands are filled below
+        stat = reduce_fn(hsi, axis=(0, 1), keepdims=True)
+    return np.where(np.isfinite(stat), stat, fill).astype(np.float32)
+
+
+def load_hsi_tensor(hdr_path: str | Path, *, normalization: str, mask_invalid: bool = True):
     import torch
 
     cube, wavelengths_m = load_hyperspectral_cube(hdr_path)
-    norm = normalize_hsi_cube(cube, normalization)
+    norm = normalize_hsi_cube(cube, normalization, mask_invalid=mask_invalid)
     tensor = torch.from_numpy(norm).permute(2, 0, 1).float()
     meta: dict[str, Any] = {
         "hdr_path": str(hdr_path),
-        "input_encoding": f"full_hsi_{normalization}",
+        "input_encoding": f"full_hsi_{normalization}" + ("_masked" if mask_invalid else ""),
+        "voxel_masking": bool(mask_invalid),
         "hsi_shape": list(cube.shape),
         "num_hsi_channels": int(cube.shape[2]),
         "num_wavelengths": int(len(wavelengths_m)),
@@ -189,7 +225,7 @@ def run_manifest(args: argparse.Namespace) -> None:
     device = None
     active_channels = None
     for row in read_prediction_input_manifest(args.manifest):
-        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(row["hdr_path"], normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         num_channels = int(hsi_tensor.shape[0])
         if model is None or active_channels != num_channels:
             model, device = load_model(args.model_name, args.device, num_channels, args.model_revision)
@@ -222,7 +258,7 @@ def run_manifest(args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     if args.hdr:
-        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization)
+        hsi_tensor, meta = load_hsi_tensor(args.hdr, normalization=args.normalization, mask_invalid=not args.no_voxel_mask)
         model, device = load_model(args.model_name, args.device, int(hsi_tensor.shape[0]), args.model_revision)
         pred = predict_hsi_tensor(
             model,

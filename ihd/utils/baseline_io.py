@@ -15,6 +15,13 @@ import spectral as spy
 from .depth_png import load_depth_png, save_depth_png
 
 
+BAND_IQR_TOLERANCE = 40.0
+LINE_SIGMA_TOLERANCE = 25.0
+LINE_RATIO_TOLERANCE = 0.25
+PREVIEW_LOW_PCT = 0.1
+PREVIEW_HIGH_PCT = 99.9
+
+
 def canonical_prediction_filename(hdr_path: str | Path) -> str:
     return f"{Path(hdr_path).stem}_depth.png"
 
@@ -26,16 +33,112 @@ def load_hyperspectral_cube(hdr_path: str | Path) -> tuple[np.ndarray, np.ndarra
     return cube, wavelengths
 
 
-def hsi_to_pseudobroadband_rgb(hsi: np.ndarray) -> np.ndarray:
-    cube = np.nan_to_num(np.asarray(hsi, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
-    gray = np.sum(cube, axis=2)
-    lo = float(np.min(gray))
-    hi = float(np.max(gray))
-    if hi > lo:
-        gray = (gray - lo) / (hi - lo)
+def band_valid_mask(cube: np.ndarray, iqr_tolerance: float = BAND_IQR_TOLERANCE) -> np.ndarray:
+
+    finite = np.isfinite(cube)
+    working = np.where(finite, cube, np.nan)
+    q1, med, q3 = np.nanpercentile(working, [25, 50, 75], axis=(0, 1))
+    iqr = q3 - q1
+    scale = np.where(iqr > 0.0, iqr, np.nanmedian(iqr[iqr > 0.0]) if np.any(iqr > 0.0) else 1.0)
+    margin = iqr_tolerance * scale
+    return finite & (cube >= med - margin) & (cube <= med + margin)
+
+
+def line_valid_mask(
+    cube: np.ndarray,
+    seed_valid: np.ndarray | None = None,
+    sigma_tolerance: float = LINE_SIGMA_TOLERANCE,
+    ratio_tolerance: float = LINE_RATIO_TOLERANCE,
+) -> np.ndarray:
+   
+    working = np.where(np.isfinite(cube), cube, np.nan)
+    if seed_valid is not None:
+        working = np.where(seed_valid, working, np.nan)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        line_med = np.nanmedian(working, axis=1)          # (lines, bands)
+        band_med = np.nanmedian(line_med, axis=0)         # (bands,)
+        q = line_med / np.where(band_med != 0.0, band_med, np.nan)
+
+    usable = np.isfinite(q)
+    if not np.any(usable):
+        return np.ones(cube.shape, dtype=bool)
+
+    centre = float(np.median(q[usable]))
+    mad = float(np.median(np.abs(q[usable] - centre)))
+    sigma = 1.4826 * mad
+
+    departure = np.abs(q - centre)
+    if sigma > 0.0:
+        outlier = departure > sigma_tolerance * sigma
     else:
-        gray = np.zeros_like(gray, dtype=np.float32)
-    gray_u8 = np.clip(gray * 255.0, 0.0, 255.0).astype(np.uint8)
+        outlier = np.zeros_like(q, dtype=bool)
+
+    bad_line = outlier & (departure > ratio_tolerance)
+    # A line reading zero or negative radiance is never real, whatever the spread.
+    bad_line |= usable & (q <= 0.0)
+    bad_line |= ~usable
+
+    return ~bad_line[:, None, :]
+
+
+def valid_voxel_mask(
+    cube: np.ndarray,
+    iqr_tolerance: float = BAND_IQR_TOLERANCE,
+    sigma_tolerance: float = LINE_SIGMA_TOLERANCE,
+    ratio_tolerance: float = LINE_RATIO_TOLERANCE,
+) -> np.ndarray:
+    """Combine the voxel-level and scan-line-level rejection tests."""
+    voxel = band_valid_mask(cube, iqr_tolerance)
+    line = line_valid_mask(cube, voxel, sigma_tolerance, ratio_tolerance)
+    return voxel & line
+
+
+def cube_to_gray(
+    cube: np.ndarray,
+    iqr_tolerance: float = BAND_IQR_TOLERANCE,
+    sigma_tolerance: float = LINE_SIGMA_TOLERANCE,
+    ratio_tolerance: float = LINE_RATIO_TOLERANCE,
+) -> np.ndarray:
+    """Collapse a spectral cube to a 2D float image, ignoring corrupted voxels."""
+    with np.errstate(invalid="ignore"):  # the raw cubes carry signalling NaNs
+        data = np.asarray(cube, dtype=np.float64)
+    if data.ndim != 3:
+        raise ValueError(f"Expected a 3D spectral cube, got shape {data.shape}.")
+    valid = valid_voxel_mask(data, iqr_tolerance, sigma_tolerance, ratio_tolerance)
+    if not np.any(valid):
+        raise ValueError("Spectral cube has no usable voxels.")
+    masked = np.where(valid, data, np.nan)
+    with np.errstate(invalid="ignore"):
+        gray = np.nanmean(masked, axis=-1)
+    if np.any(~np.isfinite(gray)):
+        fill = float(np.nanmedian(gray))
+        gray = np.where(np.isfinite(gray), gray, fill)
+    return gray
+
+
+def stretch_to_uint8(
+    gray: np.ndarray,
+    low_pct: float = PREVIEW_LOW_PCT,
+    high_pct: float = PREVIEW_HIGH_PCT,
+) -> np.ndarray:
+    """Percentile stretch a 2D float image to display-ready uint8."""
+    data = np.asarray(gray, dtype=np.float64)
+    finite = np.isfinite(data)
+    if not np.any(finite):
+        raise ValueError("Preview image has no finite pixels.")
+    lo, hi = np.percentile(data[finite], [low_pct, high_pct])
+    if hi <= lo:
+        lo, hi = float(data[finite].min()), float(data[finite].max())
+    if hi <= lo:
+        return np.zeros(data.shape, dtype=np.uint8)
+    scaled = (np.where(finite, data, lo) - lo) / (hi - lo)
+    return np.clip(np.round(scaled * 255.0), 0, 255).astype(np.uint8)
+
+
+def hsi_to_pseudobroadband_rgb(hsi: np.ndarray) -> np.ndarray:
+    
+    gray_u8 = stretch_to_uint8(cube_to_gray(hsi))
     return np.repeat(gray_u8[:, :, None], 3, axis=2)
 
 
@@ -44,7 +147,7 @@ def load_pseudobroadband_rgb(hdr_path: str | Path) -> tuple[np.ndarray, dict[str
     rgb = hsi_to_pseudobroadband_rgb(hsi)
     meta: dict[str, Any] = {
         "hdr_path": str(hdr_path),
-        "input_encoding": "pseudo_broadband_sum_all_bands_minmax_rgb",
+        "input_encoding": "pseudo_broadband_masked_nanmean_p0.1_p99.9_rgb",
         "hsi_shape": list(hsi.shape),
         "num_wavelengths": int(len(wavelengths_m)),
     }
